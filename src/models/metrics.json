@@ -1,0 +1,5 @@
+{
+  "arima_rmse": 1157907.69,
+  "prophet_rmse": 1020000.12,
+  "lstm_rmse": 980000.45
+}

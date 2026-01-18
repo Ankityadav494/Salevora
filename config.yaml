@@ -1,0 +1,63 @@
+# Configuration file for Sales Forecasting Project
+
+# Data Configuration
+data:
+  raw_data_path: "data/raw/sales_data.csv"
+  processed_data_path: "data/processed/processed_sales_data.csv"
+  test_size: 0.2
+  validation_size: 0.1
+  random_state: 42
+
+# Feature Engineering
+features:
+  lag_features: [1, 7, 30]  # Days for lag features
+  rolling_windows: [7, 30, 90]  # Days for rolling statistics
+  include_seasonality: true
+  include_holidays: true
+
+# Model Configuration
+models:
+  arima:
+    enabled: true
+    order: [2, 1, 2]  # (p, d, q)
+    seasonal_order: [1, 1, 1, 12]  # (P, D, Q, s)
+  
+  prophet:
+    enabled: true
+    yearly_seasonality: true
+    weekly_seasonality: true
+    daily_seasonality: false
+    seasonality_mode: "multiplicative"
+  
+  lstm:
+    enabled: true
+    sequence_length: 30
+    units: [50, 50]
+    dropout: 0.2
+    epochs: 50
+    batch_size: 32
+    learning_rate: 0.001
+  
+  ensemble:
+    enabled: true
+    weights: [0.3, 0.3, 0.4]  # ARIMA, Prophet, LSTM
+
+# Training Configuration
+training:
+  retrain_frequency: "weekly"  # daily, weekly, monthly
+  save_model: true
+  model_save_path: "models/"
+  log_path: "logs/"
+
+# Dashboard Configuration
+dashboard:
+  port: 8501
+  title: "Sales Forecasting Dashboard"
+  theme: "light"
+
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 8000
+  title: "Sales Forecasting API"
+  version: "1.0.0"
