@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🚀 Real-Time Sales Forecasting & Demand Prediction System
 
 A comprehensive data science project for predicting sales and demand in real-time using advanced machine learning techniques. This project demonstrates end-to-end ML pipeline implementation with interactive dashboards and production-ready features.
@@ -210,3 +211,6 @@ python api/app.py
 6. **Automation**: CI/CD pipeline for model retraining
 
 #
+=======
+# Salevora
+>>>>>>> 4803afa91636c285593f814839d68ee8d429a927

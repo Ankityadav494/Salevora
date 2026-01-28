@@ -1,111 +1,84 @@
 """
-FastAPI REST API for Sales Forecasting
+FastAPI REST API for Real-Time Sales Forecasting
 """
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional
-from datetime import datetime
-import pandas as pd
 from pathlib import Path
-import sys
+import pandas as pd
+from datetime import datetime
 
-sys.path.append(str(Path(__file__).parent.parent))
-
-from src.utils.config import load_config
-
-# Initialize FastAPI app
-config = load_config()
+# -------------------------------------------------
+# Initialize FastAPI App
+# -------------------------------------------------
 app = FastAPI(
-    title=config['api']['title'],
-    version=config['api']['version'],
-    description="REST API for Sales Forecasting and Demand Prediction"
+    title="Salevora – Real-Time Sales Forecasting API",
+    description="API to ingest live Walmart sales data",
+    version="1.0"
 )
 
+# -------------------------------------------------
+# Paths
+# -------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parents[1]
+DATA_FILE = BASE_DIR / "data" / "processed" / "live_sales.csv"
 
-class ForecastRequest(BaseModel):
-    """Request model for forecasting"""
-    periods: int = 30
-    model_type: Optional[str] = "prophet"
+# -------------------------------------------------
+# Request Model
+# -------------------------------------------------
+class SalesInput(BaseModel):
+    date: str
+    Store: int
+    Dept: int
+    sales: float
+    IsHoliday: bool
 
-
-class ForecastResponse(BaseModel):
-    """Response model for forecasting"""
-    predictions: list
-    dates: list
-    model_type: str
-    timestamp: str
-
-
+# -------------------------------------------------
+# Endpoints
+# -------------------------------------------------
 @app.get("/")
-async def root():
-    """Root endpoint"""
+def root():
     return {
-        "message": "Sales Forecasting API",
-        "version": config['api']['version'],
+        "message": "Salevora – Real-Time Sales Forecasting API",
         "endpoints": {
-            "/health": "Health check",
-            "/forecast": "Generate sales forecast",
-            "/models": "List available models"
+            "/update-sales": "POST new sales data",
+            "/health": "API health check"
         }
     }
 
-
 @app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
-
-
-@app.get("/models")
-async def list_models():
-    """List available models"""
+def health():
     return {
-        "available_models": ["prophet", "lstm", "ensemble"],
-        "default": "prophet"
+        "status": "running",
+        "timestamp": datetime.now().isoformat()
     }
 
-
-@app.post("/forecast", response_model=ForecastResponse)
-async def generate_forecast(request: ForecastRequest):
+@app.post("/update-sales")
+def update_sales(data: SalesInput):
     """
-    Generate sales forecast
-    
-    Args:
-        request: Forecast request with periods and model type
-        
-    Returns:
-        ForecastResponse: Forecast predictions
+    Receive new sales data and append it to live dataset
     """
     try:
-        # Placeholder for actual model prediction
-        # In production, load trained model and make predictions
-        
-        # Generate sample predictions (replace with actual model)
-        import numpy as np
-        predictions = np.random.uniform(100, 500, request.periods).tolist()
-        
-        # Generate dates
-        dates = pd.date_range(
-            start=datetime.now(),
-            periods=request.periods,
-            freq='D'
-        ).strftime('%Y-%m-%d').tolist()
-        
-        return ForecastResponse(
-            predictions=predictions,
-            dates=dates,
-            model_type=request.model_type,
-            timestamp=datetime.now().isoformat()
-        )
-    
+        # Load existing live data
+        df = pd.read_csv(DATA_FILE)
+
+        # Create new row
+        new_row = pd.DataFrame([{
+            "date": data.date,
+            "Store": data.Store,
+            "Dept": data.Dept,
+            "sales": data.sales,
+            "IsHoliday": data.IsHoliday
+        }])
+
+        # Append and save
+        df = pd.concat([df, new_row], ignore_index=True)
+        df.to_csv(DATA_FILE, index=False)
+
+        return {
+            "message": "Sales data updated successfully",
+            "data_added": new_row.to_dict(orient="records")[0]
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        app,
-        host=config['api']['host'],
-        port=config['api']['port']
-    )

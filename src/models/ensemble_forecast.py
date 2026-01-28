@@ -93,7 +93,7 @@ def lstm_forecast(steps, sales_series):
 # ======================================================
 def ensemble_forecast(steps=12):
     # Load processed sales data
-    data_path = BASE_DIR / "data" / "processed" / "processed_sales_data.csv"
+    data_path = BASE_DIR / "data" / "processed" / "live_sales.csv"
     df = pd.read_csv(data_path)
 
     df["date"] = pd.to_datetime(df["date"])
