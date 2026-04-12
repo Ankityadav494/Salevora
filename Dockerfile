@@ -10,9 +10,16 @@ ENV PYTHONUNBUFFERED=1 \
     API_HOST=0.0.0.0 \
     API_PORT=8000
 
-# Install system dependencies
+# Install system dependencies including build tools for pandas
 RUN apt-get update && apt-get install -y \
     curl \
+    build-essential \
+    gcc \
+    g++ \
+    gfortran \
+    libopenblas-dev \
+    liblapack-dev \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
