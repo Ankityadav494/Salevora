@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Salevora – Sign In</title>
+  <meta name="description" content="Salevora Sales Intelligence Platform – Login to access your dashboard." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@600;700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ============================================================
+     AUTH SCREEN
+     ============================================================ -->
+<div id="authScreen" class="auth-screen">
+
+  <!-- Left panel — branding -->
+  <div class="auth-left">
+    <div class="auth-left-inner">
+      <div class="auth-logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">Salevora</span>
+      </div>
+      <h1 class="auth-tagline">Predict Sales.<br /><span class="gradient-text">Dominate Markets.</span></h1>
+      <p class="auth-desc">Upload your CSV or Excel sales file and get instant AI-powered forecasts, trend charts and KPIs — all processed securely in your browser.</p>
+      <div class="auth-features">
+        <div class="af-item"><span class="af-icon">📊</span><span>Interactive forecasting charts</span></div>
+        <div class="af-item"><span class="af-icon">🤖</span><span>Ensemble AI prediction engine</span></div>
+        <div class="af-item"><span class="af-icon">🔐</span><span>Your data never leaves the device</span></div>
+        <div class="af-item"><span class="af-icon">⚡</span><span>Instant results from CSV or Excel</span></div>
+      </div>
+    </div>
+    <div class="auth-left-bg">
+      <div class="blob blob-1"></div>
+      <div class="blob blob-2"></div>
+    </div>
+  </div>
+
+  <!-- Right panel — form -->
+  <div class="auth-right">
+    <div class="auth-form-wrap">
+
+      <!-- Tabs -->
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tabLogin"    onclick="showTab('login')">Sign In</button>
+        <button class="auth-tab"        id="tabRegister" onclick="showTab('register')">Create Account</button>
+      </div>
+
+      <!-- ---- LOGIN FORM ---- -->
+      <form id="loginForm" class="auth-form" onsubmit="handleLogin(event)">
+        <h2 class="form-title">Welcome back</h2>
+        <p class="form-sub">Sign in to your Salevora account</p>
+
+        <div class="field-group">
+          <label class="field-label" for="loginEmail">Email address</label>
+          <input class="field-input" id="loginEmail" type="email" placeholder="you@example.com" required autocomplete="email" />
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="loginPassword">Password</label>
+          <div class="password-wrap">
+            <input class="field-input" id="loginPassword" type="password" placeholder="Enter your password" required autocomplete="current-password" />
+            <button type="button" class="eye-btn" onclick="togglePwd('loginPassword', this)">👁</button>
+          </div>
+        </div>
+
+        <div id="loginError" class="form-error" style="display:none"></div>
+
+        <button type="submit" class="btn btn-primary form-submit" id="loginSubmit">
+          Sign In
+        </button>
+
+        <p class="form-switch">Don't have an account? <a href="#" onclick="showTab('register')">Create one →</a></p>
+      </form>
+
+      <!-- ---- REGISTER FORM ---- -->
+      <form id="registerForm" class="auth-form" style="display:none" onsubmit="handleRegister(event)">
+        <h2 class="form-title">Create your account</h2>
+        <p class="form-sub">Start predicting your sales for free</p>
+
+        <div class="field-group">
+          <label class="field-label" for="regName">Full name</label>
+          <input class="field-input" id="regName" type="text" placeholder="Ankit Yadav" required autocomplete="name" />
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="regEmail">Email address</label>
+          <input class="field-input" id="regEmail" type="email" placeholder="you@example.com" required autocomplete="email" />
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="regPassword">Password</label>
+          <div class="password-wrap">
+            <input class="field-input" id="regPassword" type="password" placeholder="Min 6 characters" required minlength="6" autocomplete="new-password" />
+            <button type="button" class="eye-btn" onclick="togglePwd('regPassword', this)">👁</button>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="regConfirm">Confirm password</label>
+          <div class="password-wrap">
+            <input class="field-input" id="regConfirm" type="password" placeholder="Repeat password" required autocomplete="new-password" />
+            <button type="button" class="eye-btn" onclick="togglePwd('regConfirm', this)">👁</button>
+          </div>
+        </div>
+
+        <div id="regError"   class="form-error"   style="display:none"></div>
+        <div id="regSuccess" class="form-success" style="display:none"></div>
+
+        <button type="submit" class="btn btn-primary form-submit" id="regSubmit">
+          Create Account
+        </button>
+
+        <p class="form-switch">Already have an account? <a href="#" onclick="showTab('login')">Sign in →</a></p>
+      </form>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     MAIN APP (shown after login)
+     ============================================================ -->
+<div id="appScreen" style="display:none">
+
+  <!-- Navbar -->
+  <nav class="navbar" id="navbar">
+    <div class="nav-inner">
+      <a href="#" class="nav-logo" onclick="scrollTop()">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">Salevora</span>
+      </a>
+      <div class="nav-right">
+        <span class="nav-user" id="navUser"></span>
+
+        <div class="notif-bell-wrap" id="notifBellWrap">
+          <button class="notif-bell-btn" id="notifBellBtn" onclick="toggleNotifDropdown()" aria-label="Notifications">
+            🔔
+            <span class="notif-badge" id="notifBadge" style="display:none">0</span>
+          </button>
+          <div class="notif-dropdown" id="notifDropdown" style="display:none">
+            <div class="notif-dropdown-header">
+              <span class="notif-dropdown-title">Notifications</span>
+              <button class="notif-clear-btn" onclick="clearAllNotifications()">Clear all</button>
+            </div>
+            <div class="notif-list" id="notifList">
+              <div class="notif-empty">No notifications yet</div>
+            </div>
+          </div>
+        </div>
+
+        <a href="inventory.html" class="btn btn-outline" style="text-decoration:none">📦 Live Inventory</a>
+        <button class="btn btn-outline nav-pdf" onclick="exportPDF()" title="Export PDF Report">📄 PDF Report</button>
+        <button class="btn btn-outline nav-logout" onclick="handleLogout()">Sign Out</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Restore Banner -->
+  <div id="restoreBanner" class="restore-banner" style="display:none">
+    <div class="restore-inner">
+      <span class="restore-icon">💾</span>
+      <div class="restore-text">
+        <strong>Previous session found:</strong>
+        <span id="restoreInfo"></span>
+      </div>
+      <button class="btn btn-primary restore-btn" onclick="restoreFromStorage()">Restore Data</button>
+      <button class="restore-dismiss" onclick="clearStoredData()" title="Dismiss">✕</button>
+    </div>
+  </div>
+
+  <!-- Upload -->
+  <section class="app-section upload-section" id="uploadSection">
+    <div class="container">
+      <div class="app-hero">
+        <h1 class="app-hero-title">Upload &amp; <span class="gradient-text">Predict</span></h1>
+        <p class="app-hero-sub">Your data, your insights — instantly. Upload any sales file and get AI-powered forecasts, trends, and alerts in seconds.</p>
+      </div>
+
+      <div class="upload-drop-zone" id="dropZone">
+        <div class="upload-icon">📂</div>
+        <div class="upload-drop-title">Drag &amp; drop your sales file here</div>
+        <div class="upload-drop-sub">or click to browse &nbsp;·&nbsp; CSV &amp; Excel supported</div>
+        <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" hidden />
+      </div>
+      <div class="sample-data-bar">
+        <span class="sample-data-label">No file? See it in action instantly:</span>
+        <button class="btn-sample" onclick="loadSampleData()">⚡ Load 2-Year Sample Dataset</button>
+      </div>
+
+      <div id="uploadStatus" class="upload-status"></div>
+
+      <!-- column mapping -->
+      <div class="col-config" id="colConfig" style="display:none">
+        <h3 class="col-config-title">Map Columns</h3>
+        <div class="col-config-grid" id="colConfigGrid"></div>
+        <p class="col-config-hint">Auto-detected from your file. Adjust if needed.</p>
+        <button class="btn btn-primary" onclick="runPrediction()">⚡ Run Forecast &amp; Predictions</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Results (hidden until file loaded) -->
+  <div id="resultsWrap" style="display:none">
+
+    <!-- KPI row -->
+    <section class="app-section" id="kpiSection">
+      <div class="container">
+        <div class="section-label">Analysis</div>
+        <h2 class="section-title">Dataset <span class="gradient-text">Summary</span></h2>
+        <div id="insightBanner" class="insight-banner" style="display:none"></div>
+        <p class="section-sub" id="summaryText"></p>
+        <div id="goalTracker" style="display:none;margin-bottom:1.5rem"></div>
+        <div class="kpi-grid" id="kpiGrid"></div>
+        <div id="catsWrap" class="cats-wrap" style="display:none">
+          <span class="cats-label">Categories:</span>
+          <div id="catsPills" class="cats-pills"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Charts -->
+    <section class="app-section section-dark">
+      <div class="container">
+        <div class="section-label">Trends</div>
+        <h2 class="section-title">Sales <span class="gradient-text">Charts</span></h2>
+        <div class="chart-card">
+          <div class="chart-card-header"><span>Historical Trend</span><button class="btn-chart-dl" onclick="downloadChart('trendChart')">📸 PNG</button></div>
+          <div id="trendChart" class="chart-area"></div>
+        </div>
+        <div class="charts-row">
+          <div class="chart-card">
+            <div class="chart-card-header"><span>Revenue by Category</span><button class="btn-chart-dl" onclick="downloadChart('catChart')">📸 PNG</button></div>
+            <div id="catChart" class="chart-area-sm"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-card-header"><span>Monthly Totals</span><button class="btn-chart-dl" onclick="downloadChart('monthChart')">📸 PNG</button></div>
+            <div id="monthChart" class="chart-area-sm"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Forecast -->
+    <section class="app-section" id="forecastSection">
+      <div class="container">
+        <div class="section-label">Forecast</div>
+        <h2 class="section-title"><span class="gradient-text">Prediction Engine</span></h2>
+        <p class="section-sub">Weighted Ensemble: Linear Trend + Exponential Moving Average — computed in your browser.</p>
+        <div class="forecast-controls">
+          <label class="ctrl-label">Horizon:
+            <select id="horizonSelect" class="ctrl-select" onchange="updateForecast()">
+              <option value="4">4 weeks</option>
+              <option value="8">8 weeks</option>
+              <option value="12" selected>12 weeks</option>
+              <option value="16">16 weeks</option>
+              <option value="24">24 weeks</option>
+            </select>
+          </label>
+          <label class="ctrl-label">Smoothing:
+            <select id="smoothSelect" class="ctrl-select" onchange="updateForecast()">
+              <option value="light">Light</option>
+              <option value="medium" selected>Medium</option>
+              <option value="heavy">Heavy</option>
+            </select>
+          </label>
+        </div>
+        <div class="chart-card">
+          <div class="chart-card-header"><span>Forecast</span><button class="btn-chart-dl" onclick="downloadChart('forecastChart')">📸 PNG</button></div>
+          <div id="forecastChart" class="chart-area"></div>
+        </div>
+        <div class="forecast-kpis" id="forecastKpis"></div>
+      </div>
+    </section>
+
+    <!-- Table -->
+    <section class="app-section section-dark" id="tableSection">
+      <div class="container">
+        <div class="section-label">Data</div>
+        <h2 class="section-title">Data <span class="gradient-text">Table</span></h2>
+        <div class="table-toolbar">
+          <input type="text" id="tableSearch" class="table-search" placeholder="🔍 Search…" oninput="filterTable()" />
+          <span class="table-meta" id="tableMeta"></span>
+          <button class="btn btn-outline" onclick="downloadCSV()">⬇ Export CSV</button>
+        </div>
+        <div class="table-wrap">
+          <div class="table-scroll">
+            <table id="dataTable">
+              <thead id="tableHead"></thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="table-pagination" id="pagination"></div>
+      </div>
+    </section>
+
+  </div><!-- /resultsWrap -->
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container footer-inner">
+      <span class="footer-brand"><span class="logo-icon">⚡</span><span class="logo-text">Salevora</span></span>
+      <span class="footer-copy">© 2025 Salevora · Your data stays in your browser</span>
+    </div>
+  </footer>
+
+</div><!-- /appScreen -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
