@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend Service
+  salevora-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: salevora-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    networks:
+      - salevora-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: salevora-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./website:/usr/share/nginx/html:ro
+      - ./certs:/etc/nginx/certs:ro
+      - ./nginx-logs:/var/log/nginx
+    depends_on:
+      - salevora-api
+    restart: unless-stopped
+    networks:
+      - salevora-network
+
+  # Optional: PostgreSQL Database (for future upgrades)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: salevora-db
+  #   environment:
+  #     POSTGRES_DB: salevora
+  #     POSTGRES_USER: salevora
+  #     POSTGRES_PASSWORD: ${DB_PASSWORD}
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   networks:
+  #     - salevora-network
+  #   restart: unless-stopped
+
+networks:
+  salevora-network:
+    driver: bridge
+
+# volumes:
+#   postgres-data:
