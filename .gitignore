@@ -53,3 +53,30 @@ reports/*.pdf
 # Temporary files
 *.tmp
 *.temp
+# -----------------------------
+# 🔥 ADD THESE (IMPORTANT)
+# -----------------------------
+
+# Database (avoid reset confusion)
+users.db
+
+# Runtime data (Render resets anyway)
+data/*.csv
+data/*.xlsx
+
+# Backup files
+*.bak
+
+# System cache
+__pycache__/
+*.pyc
+
+# Render / deployment
+*.sqlite3
+
+# Node (if frontend ever uses npm)
+node_modules/
+
+# Build outputs
+dist/
+build/
