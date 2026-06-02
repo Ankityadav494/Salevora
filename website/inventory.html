@@ -3,176 +3,206 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Salevora — Live Inventory Intelligence</title>
-  <meta name="description" content="Real-time inventory forecasting and reorder alerts powered by Salevora." />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <title>Salevora — Stock</title>
+  <meta name="description" content="See what you have in stock and get reminders when items run low." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@700;800;900&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-  <link rel="stylesheet" href="inventory.css" />
+  <link rel="icon" type="image/png" href="assets/favicon.png?v=12" />
+  <link rel="apple-touch-icon" href="assets/logo.png?v=12" />
+  <meta name="theme-color" content="#2F5233" />
+  <link rel="stylesheet" href="style.css?v=12" />
 </head>
-<body>
+<body class="page-app page-stock page-dashboard">
 
-<!-- NAV -->
-<nav class="inv-nav">
-  <div class="inv-nav-inner">
-    <a class="inv-logo" href="index.html">⚡ <span>Salevora</span></a>
-    <div class="inv-nav-center">
-      <a href="index.html" class="inv-nav-link">Sales Intelligence</a>
-      <a href="inventory.html" class="inv-nav-link active">Live Inventory</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <img class="brand-logo" src="assets/logo.png?v=12" alt="" width="36" height="36" />
+      <span class="sidebar-brand-text">Salevora</span>
     </div>
-    <div class="inv-nav-right">
-      <div class="live-badge" id="liveBadge">
-        <span class="live-dot"></span> LIVE
-      </div>
-      <div class="refresh-info" id="refreshInfo">Connecting…</div>
-      <div class="countdown-ring">
-        <svg viewBox="0 0 36 36" class="ring-svg">
-          <circle class="ring-bg" cx="18" cy="18" r="15.9"/>
-          <circle class="ring-fill" id="ringFill" cx="18" cy="18" r="15.9" stroke-dasharray="100 100"/>
-        </svg>
-        <span class="ring-label" id="ringLabel">30</span>
-      </div>
-      <a href="index.html" class="btn-nav-back">← Dashboard</a>
-    </div>
-  </div>
-</nav>
-
-<!-- KPI BAR -->
-<section class="kpi-bar">
-  <div class="kpi-bar-inner" id="kpiBar">
-    <div class="inv-kpi skeleton"><div class="inv-kpi-val">—</div><div class="inv-kpi-lab">Total SKUs</div></div>
-    <div class="inv-kpi skeleton"><div class="inv-kpi-val">—</div><div class="inv-kpi-lab">Stock Value</div></div>
-    <div class="inv-kpi critical skeleton"><div class="inv-kpi-val">—</div><div class="inv-kpi-lab">🔴 Critical</div></div>
-    <div class="inv-kpi warning skeleton"><div class="inv-kpi-val">—</div><div class="inv-kpi-lab">🟡 At Risk</div></div>
-    <div class="inv-kpi skeleton"><div class="inv-kpi-val">—</div><div class="inv-kpi-lab">Avg Days Stock</div></div>
-    <div class="inv-kpi skeleton"><div class="inv-kpi-val">—</div><div class="inv-kpi-lab">In-Stock Rate</div></div>
-  </div>
-</section>
-
-<!-- ALERT STRIP -->
-<div class="alert-strip" id="alertStrip" style="display:none">
-  <div class="alert-strip-inner">
-    <span class="alert-strip-icon">🚨</span>
-    <span id="alertStripText">Loading alerts…</span>
-  </div>
-</div>
-
-<!-- MAIN GRID -->
-<main class="inv-main">
-
-  <!-- LEFT COL: Stock Table -->
-  <section class="inv-card full-width">
-    <div class="inv-card-header">
-      <div>
-        <div class="inv-card-label">LIVE MONITOR</div>
-        <h2 class="inv-card-title">Stock Levels <span class="grad">— All SKUs</span></h2>
-      </div>
-      <div class="table-controls">
-        <input type="text" id="skuSearch" class="sku-search" placeholder="Search SKU or name…" oninput="filterTable()" />
-        <select id="statusFilter" class="status-filter" onchange="filterTable()">
-          <option value="">All Status</option>
-          <option value="critical">🔴 Critical</option>
-          <option value="warning">🟡 At Risk</option>
-          <option value="ok">🟢 OK</option>
-          <option value="stockout">⛔ Stockout</option>
-        </select>
-        <select id="catFilter" class="status-filter" onchange="filterTable()">
-          <option value="">All Categories</option>
-          <option>Electronics</option>
-          <option>Clothing</option>
-          <option>Food &amp; Bev</option>
-          <option>Sports</option>
-          <option>Home &amp; Garden</option>
-        </select>
+    <div class="sidebar-profile">
+      <div class="sidebar-avatar" id="sidebarAvatar"><span data-icon="user"></span></div>
+      <div class="sidebar-user">
+        <div class="sidebar-name" id="sidebarUserName">Account</div>
+        <div class="sidebar-role">Stock levels</div>
       </div>
     </div>
-    <div class="table-wrap">
-      <table class="inv-table" id="stockTable">
-        <thead>
-          <tr>
-            <th>SKU</th><th>Product</th><th>Category</th><th>ABC</th>
-            <th>Stock</th><th>Reorder Pt</th><th>Days Left</th>
-            <th>Demand/day</th><th>Status</th><th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="stockBody">
-          <tr><td colspan="10" class="table-loading">⏳ Connecting to live data stream…</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
+    <hr class="sidebar-divider" />
+    <div class="sidebar-nav-label">Pages</div>
+    <nav class="sidebar-nav">
+      <a href="index.html" class="sidebar-link"><span class="sidebar-link-icon" data-icon="dashboard"></span><span class="sidebar-link-label">Dashboard</span></a>
+      <a href="inventory.html" class="sidebar-link active"><span class="sidebar-link-icon" data-icon="boxes"></span><span class="sidebar-link-label">Stock</span></a>
+      <a href="alerts.html" class="sidebar-link"><span class="sidebar-link-icon" data-icon="mail"></span><span class="sidebar-link-label">Email</span></a>
+    </nav>
+    <div class="sidebar-spacer"></div>
+    <nav class="sidebar-nav sidebar-nav--bottom">
+      <button type="button" class="sidebar-link sidebar-link--btn" onclick="handleInvLogout()"><span class="sidebar-link-icon" data-icon="logout"></span><span class="sidebar-link-label">Sign out</span></button>
+    </nav>
+  </aside>
 
-  <!-- RESTOCK ALERTS -->
-  <section class="inv-card" id="alertsCard">
-    <div class="inv-card-header">
-      <div>
-        <div class="inv-card-label">ALERT ENGINE</div>
-        <h2 class="inv-card-title">Restock <span class="grad">Alerts</span></h2>
+  <div class="app-main">
+    <header class="dash-header">
+      <div class="dash-search-wrap">
+        <span class="dash-search-icon" data-icon="search"></span>
+        <input type="search" class="dash-search" id="skuSearchTop" placeholder="Search products…" oninput="syncSkuSearch(this.value)" />
       </div>
-      <span class="badge-count" id="alertCount">0</span>
-    </div>
-    <div id="alertsBody" class="alerts-body">
-      <div class="alerts-empty">✅ No active alerts. All items fully stocked.</div>
-    </div>
-  </section>
-
-  <!-- FORECAST CHART -->
-  <section class="inv-card">
-    <div class="inv-card-header">
-      <div>
-        <div class="inv-card-label">7-DAY PROJECTION</div>
-        <h2 class="inv-card-title">Demand <span class="grad">Forecast</span></h2>
+      <div class="dash-header-actions">
+        <div class="live-badge" id="liveBadge"><span class="live-dot"></span> Live</div>
+        <span class="refresh-info" id="refreshInfo">Connecting…</span>
+        <div class="countdown-ring" title="Next refresh">
+          <svg viewBox="0 0 36 36" class="ring-svg">
+            <circle class="ring-bg" cx="18" cy="18" r="15.9"/>
+            <circle class="ring-fill" id="ringFill" cx="18" cy="18" r="15.9" stroke-dasharray="100 100"/>
+          </svg>
+          <span class="ring-label" id="ringLabel">30</span>
+        </div>
+        <a href="alerts.html" class="dash-icon-btn" title="Email alerts" data-icon="mail"></a>
       </div>
-      <select id="forecastSku" class="status-filter" onchange="loadForecast(this.value)">
-        <option value="">Select SKU…</option>
-      </select>
-    </div>
-    <div id="forecastChart" style="min-height:260px"></div>
-    <div id="forecastMeta" class="forecast-meta"></div>
-  </section>
+    </header>
 
-  <!-- ABC ANALYSIS -->
-  <section class="inv-card">
-    <div class="inv-card-header">
-      <div>
-        <div class="inv-card-label">PARETO ANALYSIS</div>
-        <h2 class="inv-card-title">ABC <span class="grad">Classification</span></h2>
+    <div class="dash-content">
+
+      <section class="dash-panel reveal">
+        <div class="dash-panel-title">Inventory</div>
+        <h1 class="dash-panel-heading">Stock levels at a glance</h1>
+        <p class="section-sub stock-intro">See what’s running low, what to reorder, and how demand compares to what you have on hand.</p>
+      </section>
+
+      <section class="dash-panel reveal">
+        <div class="dash-panel-head">
+          <div>
+            <div class="dash-panel-title">Overview</div>
+            <h2 class="dash-panel-heading">Live metrics</h2>
+          </div>
+        </div>
+        <div class="stock-kpi-grid reveal-stagger" id="kpiBar">
+          <div class="stock-kpi skeleton"><div class="stock-kpi-val">—</div><div class="stock-kpi-lab">Products</div></div>
+          <div class="stock-kpi skeleton"><div class="stock-kpi-val">—</div><div class="stock-kpi-lab">Stock value</div></div>
+          <div class="stock-kpi critical skeleton"><div class="stock-kpi-val">—</div><div class="stock-kpi-lab">Urgent</div></div>
+          <div class="stock-kpi warning skeleton"><div class="stock-kpi-val">—</div><div class="stock-kpi-lab">Watch list</div></div>
+          <div class="stock-kpi skeleton"><div class="stock-kpi-val">—</div><div class="stock-kpi-lab">Days of stock</div></div>
+          <div class="stock-kpi skeleton"><div class="stock-kpi-val">—</div><div class="stock-kpi-lab">In stock</div></div>
+        </div>
+      </section>
+
+      <div class="alert-strip dash-alert-strip" id="alertStrip" style="display:none">
+        <span class="alert-strip-label">Attention</span>
+        <span id="alertStripText">Checking stock…</span>
       </div>
-    </div>
-    <div id="abcChart" style="min-height:260px"></div>
-    <div class="abc-legend">
-      <span class="abc-chip A">A — High Value (&gt;$50k/yr)</span>
-      <span class="abc-chip B">B — Medium (&gt;$15k/yr)</span>
-      <span class="abc-chip C">C — Low Volume</span>
-    </div>
-  </section>
 
-  <!-- EOQ RECOMMENDER -->
-  <section class="inv-card full-width">
-    <div class="inv-card-header">
-      <div>
-        <div class="inv-card-label">EOQ ENGINE</div>
-        <h2 class="inv-card-title">Optimal Reorder <span class="grad">Quantities</span></h2>
+      <section class="dash-panel reveal stock-panel-full">
+        <div class="dash-panel-head">
+          <div>
+            <div class="dash-panel-title">Live monitor</div>
+            <h2 class="dash-panel-heading">Stock on hand vs. expected demand</h2>
+          </div>
+          <div class="table-controls">
+            <select id="statusFilter" class="status-filter" onchange="filterTable()">
+              <option value="">All statuses</option>
+              <option value="critical">Urgent</option>
+              <option value="warning">Watch</option>
+              <option value="ok">Good</option>
+              <option value="stockout">Out of stock</option>
+            </select>
+            <select id="catFilter" class="status-filter" onchange="filterTable()">
+              <option value="">All categories</option>
+            </select>
+          </div>
+        </div>
+        <input type="hidden" id="skuSearch" value="" />
+        <div class="table-wrap">
+          <table class="inv-table" id="stockTable">
+            <thead>
+              <tr>
+                <th>SKU</th><th>Product</th><th>Category</th><th>Priority</th>
+                <th>In stock</th><th>Need (4 wks)</th><th>Reorder at</th><th>Days left</th>
+                <th>Sold/day</th><th>Status</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="stockBody">
+              <tr><td colspan="11" class="table-loading">Loading stock data…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="stock-grid reveal-stagger">
+        <section class="dash-panel reveal" id="alertsCard">
+          <div class="dash-panel-head">
+            <div>
+              <div class="dash-panel-title">Alerts</div>
+              <h2 class="dash-panel-heading">Items needing attention</h2>
+            </div>
+            <span class="badge-count" id="alertCount">0</span>
+          </div>
+          <div id="alertsBody" class="alerts-body">
+            <div class="alerts-empty">All stocked up — nothing urgent right now.</div>
+          </div>
+        </section>
+
+        <section class="dash-panel reveal">
+          <div class="dash-panel-head">
+            <div>
+              <div class="dash-panel-title">7-day outlook</div>
+              <h2 class="dash-panel-heading">Demand forecast</h2>
+            </div>
+            <select id="forecastSku" class="status-filter" onchange="loadForecast(this.value)">
+              <option value="">Select product…</option>
+            </select>
+          </div>
+          <div id="forecastChart" class="chart-area-sm"></div>
+          <div id="forecastMeta" class="forecast-meta"></div>
+        </section>
+
+        <section class="dash-panel reveal">
+          <div class="dash-panel-head">
+            <div>
+              <div class="dash-panel-title">Product mix</div>
+              <h2 class="dash-panel-heading">Sales by importance</h2>
+            </div>
+          </div>
+          <div id="abcChart" class="chart-area-sm"></div>
+          <div class="abc-legend">
+            <span class="abc-chip A">A — Top sellers</span>
+            <span class="abc-chip B">B — Steady</span>
+            <span class="abc-chip C">C — Slow movers</span>
+          </div>
+        </section>
+
+        <section class="dash-panel reveal stock-panel-full">
+          <div class="dash-panel-head">
+            <div>
+              <div class="dash-panel-title">Reordering</div>
+              <h2 class="dash-panel-heading">Suggested order quantities</h2>
+            </div>
+          </div>
+          <div class="eoq-grid" id="eoqGrid">
+            <div class="eoq-loading">Loading suggestions…</div>
+          </div>
+        </section>
       </div>
-      <div style="font-size:0.78rem;color:var(--text-3)">Wilson Formula: √(2·D·S / H·C)</div>
-    </div>
-    <div class="eoq-grid" id="eoqGrid">
-      <div class="eoq-loading">Loading EOQ recommendations…</div>
-    </div>
-  </section>
 
-</main>
+    </div><!-- /.dash-content -->
 
-<!-- FOOTER -->
-<footer class="inv-footer">
-  <span>⚡ Salevora Inventory Intelligence</span>
-  <span>Data simulated in real-time · Updates every 10s via WebSocket</span>
-  <span id="footerTime">—</span>
-</footer>
+    <footer class="footer footer--dash">
+      <div class="footer-inner">
+        <span class="footer-copy" id="footerTime">Stock levels</span>
+      </div>
+    </footer>
+
+  </div><!-- /.app-main -->
+</div><!-- /.app-shell -->
 
 <div id="toastContainer"></div>
 
-<script src="inventory.js"></script>
+<script src="copy.js?v=12"></script>
+<script src="icons.js?v=12"></script>
+<script src="ui.js?v=10"></script>
+<script src="auth.js?v=12"></script>
+<script src="api-client.js?v=12"></script>
+<script src="inventory.js?v=12"></script>
 </body>
 </html>

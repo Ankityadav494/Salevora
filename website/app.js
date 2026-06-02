@@ -1,22 +1,16 @@
 /* =============================================
    SALEVORA — app.js
    Auth + File Processing + Predictions + Alerts
+   Connected to Python FastAPI backend
    ============================================= */
 
-/* ========================
-   AUTH — User Store
-   ======================== */
-const USERS_KEY      = 'salevora_users';
-const SESSION_KEY    = 'salevora_session';
+let backendOnline = false;
+let lastBackendForecast = null;
 let currentFileName  = '';
 
-// SHA-256 password hashing (Web Crypto API — built into every modern browser)
-async function hashPassword(pw) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw + 'sv_salt_2024'));
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-
-// IndexedDB store for large datasets (replaces 5 MB localStorage limit)
+/* ========================
+   AUTH — UI Helpers
+   ======================== */
 class SvStore {
   static _db = null;
   static async db() {
@@ -42,35 +36,62 @@ class SvStore {
   }
 }
 
-function getUsers()     { return JSON.parse(localStorage.getItem(USERS_KEY) || '[]'); }
-function saveUsers(u)   { localStorage.setItem(USERS_KEY, JSON.stringify(u)); }
-function getSession()   { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); }
-function saveSession(s) { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }
-function clearSession() { localStorage.removeItem(SESSION_KEY); }
-
-// Seed demo account with SHA-256 hash
-(async function seedDemo() {
-  const users = getUsers();
-  if (!users.find(u => u.email === 'demo@salevora.com')) {
-    const hash = await hashPassword('demo1234');
-    users.push({ name: 'Demo User', email: 'demo@salevora.com', password: hash });
-    saveUsers(users);
-  }
-})();
-
-/* ========================
-   AUTH — UI Helpers
-   ======================== */
 function showTab(tab) {
   document.getElementById('loginForm').style.display    = tab === 'login'    ? '' : 'none';
   document.getElementById('registerForm').style.display = tab === 'register' ? '' : 'none';
+  document.getElementById('otpForm').style.display        = 'none';
+  document.getElementById('forgotForm').style.display     = 'none';
+  document.getElementById('resetForm').style.display      = 'none';
   document.getElementById('tabLogin').classList.toggle('active',    tab === 'login');
   document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
   clearAuthMessages();
+  if (tab === 'login') clearPendingReset();
+}
+
+function showForgotForm() {
+  document.getElementById('loginForm').style.display = 'none';
+  document.getElementById('registerForm').style.display = 'none';
+  document.getElementById('otpForm').style.display = 'none';
+  document.getElementById('resetForm').style.display = 'none';
+  document.getElementById('forgotForm').style.display = '';
+  const loginEmail = document.getElementById('loginEmail')?.value?.trim();
+  if (loginEmail) document.getElementById('forgotEmail').value = loginEmail;
+  clearAuthMessages();
+}
+
+function showResetForm(email) {
+  document.getElementById('loginForm').style.display = 'none';
+  document.getElementById('registerForm').style.display = 'none';
+  document.getElementById('otpForm').style.display = 'none';
+  document.getElementById('forgotForm').style.display = 'none';
+  document.getElementById('resetForm').style.display = '';
+  document.getElementById('resetSub').textContent =
+    `Enter the 6-digit code we sent to ${email} and choose a new password.`;
+  document.getElementById('resetCode').value = '';
+  document.getElementById('resetPassword').value = '';
+  const err = document.getElementById('resetError');
+  if (err) { err.style.display = 'none'; err.textContent = ''; }
+}
+
+function showOtpForm(email, purpose) {
+  document.getElementById('loginForm').style.display = 'none';
+  document.getElementById('registerForm').style.display = 'none';
+  document.getElementById('otpForm').style.display = '';
+  document.getElementById('otpSub').textContent =
+    `Enter the 6-digit code we sent to ${email}`;
+  document.getElementById('otpCode').value = '';
+  const err = document.getElementById('otpError');
+  if (err) { err.style.display = 'none'; err.textContent = ''; }
+}
+
+function cancelOtp() {
+  const purpose = getPendingOtp()?.purpose || 'login';
+  clearPendingOtp();
+  showTab(purpose === 'register' ? 'register' : 'login');
 }
 
 function clearAuthMessages() {
-  ['loginError','regError','regSuccess'].forEach(id => {
+  ['loginError','regError','regSuccess','otpError','forgotError','forgotSuccess','resetError'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.style.display = 'none'; el.textContent = ''; }
   });
@@ -81,8 +102,8 @@ function showSuccess(id, msg) { const el = document.getElementById(id); el.textC
 
 function togglePwd(inputId, btn) {
   const input = document.getElementById(inputId);
-  if (input.type === 'password') { input.type = 'text'; btn.textContent = '🙈'; }
-  else                           { input.type = 'password'; btn.textContent = '👁'; }
+  if (input.type === 'password') { input.type = 'text'; btn.textContent = 'Hide'; }
+  else                           { input.type = 'password'; btn.textContent = 'Show'; }
 }
 
 /* ========================
@@ -95,21 +116,98 @@ async function handleLogin(e) {
   const password = document.getElementById('loginPassword').value;
   const btn      = document.getElementById('loginSubmit');
   btn.textContent = 'Signing in…'; btn.disabled = true;
-  const hash  = await hashPassword(password);
-  const users = getUsers();
-  let user    = users.find(u => u.email === email && u.password === hash);
-  // Backward-compat: migrate old btoa() passwords to SHA-256
-  if (!user) {
-    const legacy = users.find(u => u.email === email && u.password === btoa(password));
-    if (legacy) { legacy.password = hash; saveUsers(users); user = legacy; }
+  try {
+    const user = await loginUser(email, password);
+    try {
+      enterApp(user);
+    } catch (uiErr) {
+      console.error('enterApp failed:', uiErr);
+      showError('loginError', '❌ Signed in, but the dashboard failed to load. Hard refresh (Ctrl+Shift+R) and try again.');
+    }
+  } catch (err) {
+    showError('loginError', `❌ ${friendlyError(err.message) || 'That email or password is not correct.'}`);
   }
-  if (user) {
-    saveSession({ name: user.name, email: user.email });
+  btn.textContent = 'Sign in'; btn.disabled = false;
+}
+
+async function handleForgotPassword(e) {
+  e.preventDefault();
+  clearAuthMessages();
+  const email = document.getElementById('forgotEmail').value.trim().toLowerCase();
+  const btn = document.getElementById('forgotSubmit');
+  btn.textContent = 'Sending…'; btn.disabled = true;
+  try {
+    const res = await requestPasswordReset(email);
+    showResetForm(email);
+    toast(res.message || 'Check your email for a reset code.', 'success');
+  } catch (err) {
+    showError('forgotError', `❌ ${friendlyError(err.message)}`);
+  }
+  btn.textContent = 'Send reset code'; btn.disabled = false;
+}
+
+async function handleResetPassword(e) {
+  e.preventDefault();
+  clearAuthMessages();
+  const pending = getPendingReset();
+  if (!pending?.email) { showTab('login'); return; }
+  const otp = document.getElementById('resetCode').value.trim();
+  const password = document.getElementById('resetPassword').value;
+  const btn = document.getElementById('resetSubmit');
+  if (password.length < 6) {
+    showError('resetError', '❌ Password must be at least 6 characters.');
+    return;
+  }
+  btn.textContent = 'Updating…'; btn.disabled = true;
+  try {
+    const user = await resetPassword(pending.email, otp, password);
     enterApp(user);
-  } else {
-    showError('loginError', '❌ Invalid email or password. Try demo@salevora.com / demo1234');
+    toast('Password updated. Welcome back!', 'success');
+  } catch (err) {
+    showError('resetError', `❌ ${friendlyError(err.message)}`);
   }
-  btn.textContent = 'Sign In'; btn.disabled = false;
+  btn.textContent = 'Update password'; btn.disabled = false;
+}
+
+async function resendResetCode() {
+  const pending = getPendingReset();
+  if (!pending?.email) { showForgotForm(); return; }
+  try {
+    const res = await requestPasswordReset(pending.email);
+    toast(res.message || 'Reset code resent.', 'success');
+  } catch (err) {
+    showError('resetError', `❌ ${friendlyError(err.message)}`);
+  }
+}
+
+async function handleOtpVerify(e) {
+  e.preventDefault();
+  const pending = getPendingOtp();
+  if (!pending) { showTab('login'); return; }
+  const otp = document.getElementById('otpCode').value.trim();
+  const btn = document.getElementById('otpSubmit');
+  btn.textContent = 'Verifying…'; btn.disabled = true;
+  try {
+    const user = await verifyOtpAndLogin(pending.email, otp, pending.purpose);
+    enterApp(user);
+  } catch (err) {
+    showError('otpError', `❌ ${friendlyError(err.message)}`);
+  }
+  btn.textContent = 'Verify & Continue'; btn.disabled = false;
+}
+
+async function resendOtp() {
+  const pending = getPendingOtp();
+  if (!pending) return;
+  try {
+    const res = await requestOtp(pending.email, pending.purpose, {
+      password: pending.password,
+      name: pending.name,
+    });
+    toast(res.message || 'Code resent.', 'success');
+  } catch (err) {
+    showError('otpError', `❌ ${friendlyError(err.message)}`);
+  }
 }
 
 /* ========================
@@ -121,19 +219,21 @@ async function handleRegister(e) {
   const name     = document.getElementById('regName').value.trim();
   const email    = document.getElementById('regEmail').value.trim().toLowerCase();
   const password = document.getElementById('regPassword').value;
-  const confirm  = document.getElementById('regConfirm').value;
   const btn      = document.getElementById('regSubmit');
-  if (password !== confirm) { showError('regError', '❌ Passwords do not match.'); return; }
   if (password.length < 6)  { showError('regError', '❌ Password must be at least 6 characters.'); return; }
-  const users = getUsers();
-  if (users.find(u => u.email === email)) { showError('regError', '❌ An account with this email already exists.'); return; }
   btn.textContent = 'Creating account…'; btn.disabled = true;
-  const hash = await hashPassword(password);
-  users.push({ name, email, password: hash });
-  saveUsers(users);
-  saveSession({ name, email });
-  showSuccess('regSuccess', '✅ Account created! Signing you in…');
-  setTimeout(() => enterApp({ name, email }), 800);
+  try {
+    const otpRes = await requestOtp(email, 'register', { password, name });
+    if (otpRes.skip_otp) {
+      const user = await registerUser(name, email, password);
+      enterApp(user);
+    } else {
+      showOtpForm(email, 'register');
+      showSuccess('regSuccess', 'Check your email for a sign-in code.');
+    }
+  } catch (err) {
+    showError('regError', `❌ ${friendlyError(err.message)}`);
+  }
   btn.textContent = 'Create Account'; btn.disabled = false;
 }
 
@@ -141,18 +241,81 @@ async function handleRegister(e) {
    APP — Enter / Exit
    ======================== */
 function enterApp(user) {
+  document.body.classList.remove('page-auth');
+  document.body.classList.add('page-app', 'page-dashboard');
   document.getElementById('authScreen').style.display = 'none';
-  document.getElementById('appScreen').style.display  = '';
-  document.getElementById('navUser').textContent = `👤 ${user.name}`;
-
-  // Re-inject alerts section if results are showing
-  maybeAddAlertSection();
+  document.getElementById('appScreen').style.display  = 'flex';
+  setSidebarUser(user);
   checkRestoreData();
-  toast(`Welcome back, ${user.name.split(' ')[0]}! 👋`, 'success');
+  bootstrapApp();
+  if (typeof decorateIcons === 'function') decorateIcons();
+  if (typeof decorateSidebar === 'function') decorateSidebar();
+  if (typeof initAppShellAnimation === 'function') initAppShellAnimation(document.getElementById('appScreen'));
+  setSidebarUser(user);
+  if (typeof refreshReveals === 'function') refreshReveals();
+  if (typeof initReveal === 'function') initReveal();
+  toast(`Welcome back, ${user.name.split(' ')[0]}!`, 'success');
+}
+
+async function bootstrapApp() {
+  if (!getToken()) return;
+  try {
+    await checkBackend();
+    const status = await SalevoraAPI.appStatus();
+    if (status.sales?.rows) {
+      const key = 'sv_server_dismiss_' + (getSession()?.email || '');
+      if (!localStorage.getItem(key)) {
+        const banner = document.getElementById('serverDataBanner');
+        const info = document.getElementById('serverDataInfo');
+        if (banner && info) {
+          info.textContent = ` ${status.sales.rows.toLocaleString()} rows · ${status.sales.date_start} to ${status.sales.date_end}`;
+          banner.style.display = '';
+        }
+      }
+    }
+    if (status.inventory?.alerts > 0) {
+      addNavNotification(
+        'Stock reminders',
+        `${status.inventory.alerts} product(s) may need attention — open Stock Levels.`,
+        status.inventory.critical ? 'danger' : 'warning'
+      );
+    }
+  } catch (e) {
+    console.warn('Bootstrap failed:', e);
+  }
+}
+
+function dismissServerBanner() {
+  localStorage.setItem('sv_server_dismiss_' + (getSession()?.email || ''), '1');
+  const b = document.getElementById('serverDataBanner');
+  if (b) b.style.display = 'none';
+}
+
+async function loadServerSales() {
+  try {
+    setUploadStatus('info', 'Loading your saved sales…');
+    const res = await SalevoraAPI.downloadData();
+    if (!res.data?.length) { toast('No saved sales found.', 'warning'); return; }
+    rawData = res.data;
+    currentFileName = 'saved_sales.csv';
+    allColumns = Object.keys(res.data[0]);
+    const lc = allColumns.map(c => c.toLowerCase());
+    colMap.date     = allColumns.find((_, i) => lc[i].includes('date')) || 'date';
+    colMap.sales    = allColumns.find((_, i) => lc[i].includes('sales')) || 'sales';
+    colMap.revenue  = allColumns.find((_, i) => lc[i].includes('revenue')) || '';
+    colMap.category = allColumns.find((_, i) => lc[i].includes('category')) || '';
+    dismissServerBanner();
+    runPrediction();
+    toast(`Loaded ${res.rows.toLocaleString()} saved sales rows.`, 'success');
+  } catch (e) {
+    toast('Could not load saved sales.', 'warning');
+  }
 }
 
 function handleLogout() {
   clearSession();
+  document.body.classList.add('page-auth');
+  document.body.classList.remove('page-app', 'page-dashboard');
   document.getElementById('authScreen').style.display = '';
   document.getElementById('appScreen').style.display  = 'none';
   // Clear file state
@@ -166,11 +329,82 @@ function handleLogout() {
 
 function scrollTop() { window.scrollTo({ top: 0, behavior: 'smooth' }); }
 
+function onDashSearch(q) {
+  const tableSearch = document.getElementById('tableSearch');
+  if (tableSearch) {
+    tableSearch.value = q;
+    if (typeof filterTable === 'function') filterTable();
+  }
+  if (q && document.getElementById('resultsWrap')?.style.display !== 'none') {
+    document.getElementById('tableSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+function pctRingSvg(pct, color = 'var(--accent)') {
+  const p = Math.min(100, Math.max(0, Math.abs(pct)));
+  const r = 42;
+  const circ = 2 * Math.PI * r;
+  const dash = circ * (p / 100);
+  return `<svg class="ring-chart" viewBox="0 0 100 100" aria-hidden="true">
+    <circle cx="50" cy="50" r="${r}" fill="none" stroke="var(--border)" stroke-width="9"/>
+    <circle cx="50" cy="50" r="${r}" fill="none" stroke="${color}" stroke-width="9"
+      stroke-dasharray="${dash} ${circ}" stroke-linecap="round" transform="rotate(-90 50 50)"/>
+  </svg>`;
+}
+
+const RING_COLORS = { revenue: '#2F5233', momentum: '#4A7A50', growth: '#7BA882' };
+
+function ringStatCard(label, pct, display, sub, variant = 'revenue') {
+  const barW = Math.min(100, Math.max(8, Math.abs(pct)));
+  const color = RING_COLORS[variant] || RING_COLORS.revenue;
+  return `<div class="stat-ring-card stat-ring-card--${variant}">
+    <div class="stat-ring-label">${label}</div>
+    <div class="stat-ring-wrap">
+      ${pctRingSvg(pct, color)}
+      <div class="stat-ring-pct">${display}</div>
+    </div>
+    <div class="stat-ring-sub">${sub}</div>
+    <div class="stat-ring-bar"><div class="stat-ring-bar-fill" style="width:${barW}%"></div></div>
+  </div>`;
+}
+
 // Auto-login if session active
-window.addEventListener('DOMContentLoaded', () => {
-  const session = getSession();
-  if (session) { enterApp(session); }
+window.addEventListener('DOMContentLoaded', async () => {
+  checkBackend();
+  const user = await validateSession();
+  if (user) enterApp(user);
 });
+
+async function checkBackend() {
+  try {
+    await SalevoraAPI.health();
+    backendOnline = true;
+  } catch {
+    backendOnline = false;
+  }
+}
+
+async function uploadToBackend(file, mode = 'replace') {
+  if (!backendOnline) await checkBackend();
+  if (!backendOnline) return null;
+  try {
+    return await SalevoraAPI.uploadFile(file, mode);
+  } catch (e) {
+    console.warn('Backend upload failed:', e);
+    toast('Could not save to the server — showing results on this page only.', 'warning');
+    return null;
+  }
+}
+
+async function fetchBackendForecast(horizon, model) {
+  if (!backendOnline) await checkBackend();
+  if (!backendOnline) return null;
+  try {
+    return await SalevoraAPI.forecast(horizon, model);
+  } catch {
+    return null;
+  }
+}
 
 /* ========================
    DATA PERSISTENCE (IndexedDB — per-user)
@@ -184,7 +418,7 @@ async function saveToStorage() {
       colMap,
       savedAt: new Date().toISOString(),
       weeklyData: weeklyData.map(w => ({ d: w.date.getTime(), s: w.sales, r: w.revenue })),
-      mappedData: rawMappedData.slice(0, 5000).map(r => ({ d: r.date.getTime(), s: r.sales, rv: r.revenue, c: r.category }))
+      mappedData: mappedData.slice(0, 5000).map(r => ({ d: r.date.getTime(), s: r.sales, rv: r.revenue, c: r.category }))
     });
   } catch(e) { console.warn('IndexedDB save failed:', e); }
 }
@@ -208,17 +442,15 @@ async function restoreFromStorage() {
     const key   = 'sv_data_' + (getSession()?.email || 'anon');
     const saved = await SvStore.get(key);
     if (!saved?.weeklyData?.length) { toast('No saved data found.', 'error'); return; }
-    rawMappedData = saved.mappedData.map(r => ({ date: new Date(r.d), sales: r.s, revenue: r.rv, category: r.c }));
-    mappedData    = [...rawMappedData];
-    rawWeeklyData = saved.weeklyData.map(w => ({ date: new Date(w.d), sales: w.s, revenue: w.r }));
-    weeklyData    = [...rawWeeklyData];
+    mappedData = saved.mappedData.map(r => ({ date: new Date(r.d), sales: r.s, revenue: r.rv, category: r.c }));
+    weeklyData = saved.weeklyData.map(w => ({ date: new Date(w.d), sales: w.s, revenue: w.r }));
     colMap        = saved.colMap;
     currentFileName = saved.fileName;
     document.getElementById('restoreBanner').style.display = 'none';
     document.getElementById('resultsWrap').style.display = '';
     document.getElementById('colConfig').style.display = 'none';
     buildKPIs(); buildTrendChart(); buildCategoryChart(); buildMonthlyChart();
-    buildTopPerformers(); buildYoYChart(); buildProductChart(); updateForecast(); buildTable(); maybeAddAlertSection();
+    buildTopPerformers(); updateForecast(); buildTable();
     document.getElementById('kpiSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
     toast(`✅ Restored “${saved.fileName}” for ${getSession()?.email || 'you'}!`, 'success');
   } catch(e) { toast('Could not restore session data.', 'error'); }
@@ -243,7 +475,7 @@ function buildGoalTracker() {
   const cur   = mappedData.filter(r => (endMs - r.date.getTime()) / 86400000 <= 30).reduce((s, r) => s + r.sales, 0);
   const pct   = goal > 0 ? Math.min(100, cur / goal * 100) : 0;
   const cls   = pct >= 80 ? 'on-track' : pct >= 50 ? 'at-risk' : goal > 0 ? 'behind' : 'no-goal';
-  const statusTxt = !goal ? '❓ Set a target to track progress' : pct >= 80 ? '🟢 On Track' : pct >= 50 ? '🟡 At Risk' : '🔴 Behind Target';
+  const statusTxt = !goal ? 'Set a target to track progress' : pct >= 80 ? 'On track' : pct >= 50 ? 'At risk' : 'Behind target';
   const now = new Date();
   const daysLeft = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate();
   el.style.display = '';
@@ -251,7 +483,7 @@ function buildGoalTracker() {
     <div class="goal-card">
       <div class="goal-header">
         <div>
-          <div class="goal-title">🎯 Monthly Sales Goal</div>
+          <div class="goal-title">Monthly sales goal</div>
           <div class="goal-badge ${cls}">${statusTxt}</div>
         </div>
         <div class="goal-input-group">
@@ -307,26 +539,26 @@ async function exportPDF() {
 <title>${filename}</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:Arial,Helvetica,sans-serif;color:#111827;background:#fff;font-size:13px}
-  .header{background:linear-gradient(135deg,#0a0d24 0%,#1e1b4b 100%);color:#fff;padding:28px 40px;display:flex;justify-content:space-between;align-items:center}
-  .logo{font-size:26px;font-weight:900;letter-spacing:-0.5px}.logo em{color:#a78bfa;font-style:normal}
-  .header-sub{font-size:11px;opacity:.7;margin-top:5px}
-  .header-right{text-align:right;font-size:11px;opacity:.75;line-height:1.7}
+  body{font-family:'DM Sans',Arial,sans-serif;color:#1F1C18;background:#FAF8F4;font-size:13px}
+  .header{background:#2F5233;color:#fff;padding:28px 40px;display:flex;justify-content:space-between;align-items:center}
+  .logo{font-family:Georgia,serif;font-size:26px;font-weight:400;letter-spacing:-0.02em}
+  .header-sub{font-size:11px;opacity:.85;margin-top:5px}
+  .header-right{text-align:right;font-size:11px;opacity:.85;line-height:1.7}
   .body{padding:30px 40px}
-  .insight{background:#eef2ff;border-left:4px solid #6366f1;padding:11px 15px;margin-bottom:20px;border-radius:4px;font-size:12px;color:#3730a3;font-weight:500}
-  .summary{font-size:11px;color:#6b7280;margin-bottom:22px}
-  h2{font-size:14px;font-weight:700;color:#111827;border-bottom:2px solid #6366f1;padding-bottom:5px;margin-bottom:12px;margin-top:24px}
+  .insight{background:#E6EFE7;border-left:4px solid #2F5233;padding:11px 15px;margin-bottom:20px;border-radius:4px;font-size:12px;color:#243F27;font-weight:500}
+  .summary{font-size:11px;color:#5C5650;margin-bottom:22px}
+  h2{font-size:14px;font-weight:700;color:#1F1C18;border-bottom:2px solid #2F5233;padding-bottom:5px;margin-bottom:12px;margin-top:24px}
   .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:8px}
-  .kpi{background:#f9fafb;border:1px solid #e5e7eb;border-top:3px solid #6366f1;border-radius:6px;padding:11px}
-  .kpi-l{font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:#9ca3af;margin-bottom:4px}
-  .kpi-v{font-size:17px;font-weight:800;color:#111827}
-  .kpi-t{font-size:10px;color:#6b7280;margin-top:3px}
-  .chart{width:100%;height:auto;border-radius:6px;border:1px solid #e5e7eb;margin-bottom:6px}
+  .kpi{background:#fff;border:1px solid #DDD8CE;border-top:3px solid #2F5233;border-radius:6px;padding:11px}
+  .kpi-l{font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:#8A837A;margin-bottom:4px}
+  .kpi-v{font-size:17px;font-weight:800;color:#1F1C18}
+  .kpi-t{font-size:10px;color:#5C5650;margin-top:3px}
+  .chart{width:100%;height:auto;border-radius:6px;border:1px solid #DDD8CE;margin-bottom:6px}
   table{width:100%;border-collapse:collapse;font-size:12px}
-  thead th{background:#6366f1;color:#fff;padding:8px 10px;text-align:left;font-size:11px}
-  tbody td{padding:8px 10px;border-bottom:1px solid #f3f4f6}
-  tbody tr:nth-child(even) td{background:#f9fafb}
-  .footer{margin-top:30px;padding-top:12px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;font-size:10px;color:#9ca3af}
+  thead th{background:#2F5233;color:#fff;padding:8px 10px;text-align:left;font-size:11px}
+  tbody td{padding:8px 10px;border-bottom:1px solid #F3F0EA}
+  tbody tr:nth-child(even) td{background:#FAF8F4}
+  .footer{margin-top:30px;padding-top:12px;border-top:1px solid #DDD8CE;display:flex;justify-content:space-between;font-size:10px;color:#8A837A}
   @media print{
     body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     h2{page-break-after:avoid}
@@ -334,20 +566,20 @@ async function exportPDF() {
   }
 </style></head><body>
 <div class="header">
-  <div><div class="logo">&#9889; Sale<em>vora</em></div><div class="header-sub">Sales Intelligence Report &nbsp;&middot;&nbsp; Confidential</div></div>
+  <div><div class="logo">Salevora</div><div class="header-sub">Sales report</div></div>
   <div class="header-right"><strong>${today}</strong><br>Generated by Salevora</div>
 </div>
 <div class="body">
   ${insight?`<div class="insight">${insight}</div>`:''}
-  ${summary?`<p class="summary">&#128202; ${summary}</p>`:''}
+  ${summary?`<p class="summary">${summary}</p>`:''}
   <h2>Key Performance Indicators</h2>
   <div class="kpi-grid no-break">${kpiCards}</div>
   ${trendImg?`<h2>Historical Sales Trend + Anomaly Detection</h2><img class="chart no-break" src="${trendImg}" />`:''}
-  ${forecastImg?`<h2>Sales Forecast &mdash; Weighted Ensemble Model</h2><img class="chart no-break" src="${forecastImg}" />`:''}
+  ${forecastImg?`<h2>What sales may look like next</h2><img class="chart no-break" src="${forecastImg}" />`:''}
   ${perfRows?`<h2>Top Performers by Category</h2><table class="no-break"><thead><tr><th>Rank</th><th>Category</th><th>Stats</th></tr></thead><tbody>${perfRows}</tbody></table>`:''}
   <div class="footer">
-    <span>&#9889; Salevora Sales Intelligence</span>
-    <span>All data processed locally &mdash; never leaves your browser</span>
+    <span>Salevora</span>
+    <span>Your data stays on your account</span>
     <span>${new Date().toLocaleDateString()}</span>
   </div>
 </div>
@@ -432,7 +664,7 @@ function toggleNotifDropdown() {
 
 function clearAllNotifications() {
   const list = document.getElementById('notifList');
-  if (list) list.innerHTML = '<div class="notif-empty">No notifications yet</div>';
+  if (list) list.innerHTML = '<div class="notif-empty">Nothing new</div>';
   notifCount = 0;
   const badge = document.getElementById('notifBadge');
   if (badge) badge.style.display = 'none';
@@ -450,39 +682,9 @@ document.addEventListener('click', e => {
    FILE UPLOAD
    ======================== */
 let rawData = [], mappedData = [], weeklyData = [], forecastValues = [], allColumns = [];
-let rawMappedData = [], rawWeeklyData = []; // Originals preserved for date-range filter
 let colMap = { date:'', sales:'', revenue:'', category:'' };
 let filteredRows = [], currentPage = 1;
 const PAGE_SIZE = 25;
-
-/* ========================
-   DATE RANGE FILTER
-   ======================== */
-function applyDateFilter() {
-  const sv = document.getElementById('filterStart')?.value;
-  const ev = document.getElementById('filterEnd')?.value;
-  const s  = sv ? new Date(sv) : null;
-  const e  = ev ? new Date(ev) : null;
-  mappedData  = rawMappedData.filter(r => (!s || r.date >= s) && (!e || r.date <= e));
-  weeklyData  = aggregateWeekly(mappedData);
-  if (!mappedData.length) { toast('No data in selected range. Try a wider range.', 'warning'); return; }
-  redrawAll();
-  toast(`Filtered to ${mappedData.length.toLocaleString()} records in range.`, 'info');
-}
-
-function resetDateFilter() {
-  document.getElementById('filterStart').value = '';
-  document.getElementById('filterEnd').value   = '';
-  mappedData = [...rawMappedData];
-  weeklyData = [...rawWeeklyData];
-  redrawAll();
-  toast('Date filter removed — showing all data.', 'info');
-}
-
-function redrawAll() {
-  buildKPIs(); buildTrendChart(); buildCategoryChart(); buildMonthlyChart();
-  buildTopPerformers(); buildYoYChart(); buildProductChart(); updateForecast(); buildTable();
-}
 
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
@@ -501,7 +703,7 @@ function handleFile(file) {
     Papa.parse(file, {
       header: true, skipEmptyLines: true,
       complete: r => processRaw(r.data, file.name),
-      error:    err => setUploadStatus('error', 'CSV parse error: ' + err.message),
+      error: () => setUploadStatus('error', 'Could not read this file. Please check the format and try again.'),
     });
   } else if (['xlsx','xls'].includes(ext)) {
     const reader = new FileReader();
@@ -514,7 +716,7 @@ function handleFile(file) {
     };
     reader.readAsBinaryString(file);
   } else {
-    setUploadStatus('error', `Unsupported file type ".${ext}". Please use a CSV or Excel file.`);
+    setUploadStatus('error', 'Please use an Excel or spreadsheet file (.xlsx, .xls, or .csv).');
   }
 }
 
@@ -522,30 +724,6 @@ function setUploadStatus(type, msg) {
   const el = document.getElementById('uploadStatus');
   el.className = 'upload-status ' + type;
   el.textContent = msg;
-}
-
-/* ========================
-   SAMPLE DATA LOADER
-   ======================== */
-function loadSampleData() {
-  const cats = ['Electronics','Clothing','Food & Bev','Sports','Home & Garden'];
-  const rows = [];
-  const base = { Electronics:45000, Clothing:32000, 'Food & Bev':28000, Sports:18000, 'Home & Garden':14000 };
-  const start = new Date('2022-01-03');
-  for (let w = 0; w < 104; w++) {
-    const d = new Date(start); d.setDate(d.getDate() + w * 7);
-    const seasonal = 1 + 0.45 * Math.sin((d.getMonth() - 2) * Math.PI / 6);
-    const trend    = 1 + w * 0.004;
-    cats.forEach(cat => {
-      const s = Math.max(500, Math.round(base[cat] * seasonal * trend * (0.75 + Math.random() * 0.5)));
-      rows.push({ date: d.toISOString().slice(0,10), sales: s, revenue: Math.round(s * (1.15 + Math.random()*0.2)), category: cat });
-    });
-  }
-  rawData = rows; allColumns = ['date','sales','revenue','category'];
-  colMap = { date:'date', sales:'sales', revenue:'revenue', category:'category' };
-  document.getElementById('colConfig').style.display = 'none';
-  setUploadStatus('success', `✅ Sample dataset loaded — ${rows.length.toLocaleString()} rows · 2 years · ${cats.length} categories · 104 weeks`);
-  setTimeout(() => runPrediction(), 200);
 }
 
 function processRaw(data, filename) {
@@ -610,29 +788,14 @@ function runPrediction() {
     const sales    = parseFloat(String(row[colMap.sales]  || 0).replace(/[$,]/g,'')) || 0;
     const revenue  = colMap.revenue ? (parseFloat(String(row[colMap.revenue] || 0).replace(/[$,]/g,'')) || sales) : sales;
     const category = colMap.category ? String(row[colMap.category] || 'Uncategorised') : 'Uncategorised';
-    // Detect product/SKU column automatically
-    const productCol = allColumns.find(c => /product|sku|item|name/i.test(c));
-    const product  = productCol ? String(row[productCol] || 'Unknown') : null;
-    return { date: d, sales, revenue, category, product };
+    return { date: d, sales, revenue, category };
   }).filter(Boolean).sort((a,b) => a.date - b.date);
 
   if (!mappedData.length) {
     setUploadStatus('error', 'No valid date rows found. Check your date column (use YYYY-MM-DD).'); return;
   }
 
-  // Preserve originals for date-range filter and YoY chart
-  rawMappedData = [...mappedData];
-  weeklyData    = aggregateWeekly(mappedData);
-  rawWeeklyData = [...weeklyData];
-
-  // Init date filter inputs span
-  const allDates = mappedData.map(r => r.date);
-  const minD = new Date(Math.min(...allDates)).toISOString().slice(0,10);
-  const maxD = new Date(Math.max(...allDates)).toISOString().slice(0,10);
-  const fs = document.getElementById('filterStart'), fe = document.getElementById('filterEnd');
-  if (fs) { fs.min = minD; fs.max = maxD; fs.value = ''; }
-  if (fe) { fe.min = minD; fe.max = maxD; fe.value = ''; }
-  const df = document.getElementById('dateFilter'); if (df) df.style.display = '';
+  weeklyData = aggregateWeekly(mappedData);
 
   document.getElementById('resultsWrap').style.display = '';
   buildKPIs();
@@ -640,15 +803,31 @@ function runPrediction() {
   buildCategoryChart();
   buildMonthlyChart();
   buildTopPerformers();
-  buildYoYChart();
-  buildProductChart();
   updateForecast();
   buildTable();
-  maybeAddAlertSection();
+  if (typeof refreshReveals === 'function') refreshReveals();
+  if (typeof animateStatRings === 'function') animateStatRings();
 
   document.getElementById('kpiSection').scrollIntoView({ behavior:'smooth', block:'start' });
-  toast('Analysis complete! Scroll down to see your forecasts.', 'success');
+  toast('Done! Scroll down to see your sales outlook.', 'success');
   saveToStorage();
+
+  if (currentFileName && fileInput.files[0]) {
+    uploadToBackend(fileInput.files[0]).then(res => {
+      if (res) {
+        const inv = res.inventory;
+        const invMsg = inv
+          ? ` · Stock check: ${inv.skus_from_sales} products, ${inv.alert_count} need attention`
+          : '';
+        toast(`✅ Saved (${res.rows_saved?.toLocaleString()} rows)${invMsg}`, 'success');
+        notifyAlertEmail(res.alert_email);
+        if (inv?.alert_count > 0) {
+          toast('Some products may run low — check Stock Levels.', 'warning', 5000);
+        }
+        updateForecast();
+      }
+    });
+  }
 }
 
 /* ========================
@@ -705,29 +884,50 @@ function buildKPIs() {
   if(yoy!=null) parts.push(`${yoy>=0?'up':'down'} <strong>${Math.abs(yoy).toFixed(1)}%</strong> year-over-year`);
   if(bestCat)   parts.push(`<strong>${bestCat[0]}</strong> is your top category`);
   const ib=document.getElementById('insightBanner');
-  if(ib){ib.style.display=parts.length?'':'none'; ib.innerHTML='🎯 '+parts.join(' · ')+'.';}
+  if(ib){ib.style.display=parts.length?'':'none'; ib.innerHTML=parts.join(' · ')+'.';}
 
   document.getElementById('summaryText').textContent =
     `${rows.toLocaleString()} records · ${fmtDate(start)} → ${fmtDate(end)} · ${weeklyData.length} weeks · ${cats.length} categories`;
 
+  const momentumPct = Math.min(100, Math.abs(delta));
+  const growthPct = mom != null ? Math.min(100, Math.abs(mom)) : (yoy != null ? Math.min(100, Math.abs(yoy)) : 50);
+  const revenueShare = total > 0 ? Math.min(100, Math.round((last4 / (sales || 1)) * 100 * 4)) : 0;
+
+  const ringEl = document.getElementById('ringStats');
+  if (ringEl) {
+    ringEl.innerHTML = [
+      ringStatCard('Revenue', revenueShare || 25, fmtCur(total), 'Total revenue to date', 'revenue'),
+      ringStatCard('Momentum', momentumPct || 0, `${delta >= 0 ? '+' : ''}${delta.toFixed(0)}%`, 'Last 4 weeks vs prior 4', 'momentum'),
+      ringStatCard('Growth', growthPct, mom != null ? `${mom >= 0 ? '+' : ''}${mom.toFixed(0)}%` : (yoy != null ? `${yoy >= 0 ? '+' : ''}${yoy.toFixed(0)}%` : '—'), mom != null ? 'Month over month' : 'Year over year', 'growth'),
+    ].join('');
+  }
+
+  const statBoxes = document.getElementById('statBoxes');
+  if (statBoxes) {
+    statBoxes.innerHTML = [
+      { lab: 'Total sales', val: fmtCur(sales) },
+      { lab: 'Daily avg', val: fmtCur(sales / (days || 1)) },
+      { lab: 'Categories', val: String(cats.length) },
+    ].map(b => `<div class="dash-stat-box"><div class="dash-stat-box-val">${b.val}</div><div class="dash-stat-box-lab">${b.lab}</div></div>`).join('');
+  }
+
   document.getElementById('kpiGrid').innerHTML = [
-    { icon:'💰', label:'Total Revenue',  value:fmtCur(total),         sub:`${rows.toLocaleString()} records` },
-    { icon:'📈', label:'Total Sales',    value:fmtCur(sales),         sub:`${weeklyData.length} weeks` },
-    { icon:'📊', label:'Avg Daily',      value:fmtCur(sales/(days||1)),sub:`Over ${Math.round(days)} days` },
-    { icon:'🔄', label:'Last 4 Wks',     value:fmtCur(last4),         trend:delta },
-    mom!=null&&{ icon:'📅', label:'MoM Change',   value:fmtCur(last30),        trend:mom },
-    yoy!=null&&{ icon:'📆', label:'YoY Growth',   value:fmtCur(last365),       trend:yoy },
-    bestCat  &&{ icon:'🏆', label:'Top Category', value:bestCat[0],            sub:fmtCur(bestCat[1])+' in sales' },
-    { icon:'📅', label:'Period Start',  value:fmtDate(start),        sub:'Earliest record' },
-    { icon:'📆', label:'Period End',    value:fmtDate(end),          sub:'Latest record' },
-    { icon:'🏷️', label:'Categories',  value:cats.length,           sub:cats.slice(0,3).join(', ')+(cats.length>3?'…':'') },
-  ].filter(Boolean).map(k=>`
-    <div class="kpi-card">
-      <span class="kpi-icon">${k.icon}</span>
-      <div class="kpi-label">${k.label}</div>
+    { label:'Total revenue',  value:fmtCur(total),         sub:`${rows.toLocaleString()} records` },
+    { label:'Last 4 weeks',   value:fmtCur(last4),         trend:delta },
+    mom!=null&&{ label:'Month over month', value:fmtCur(last30), trend:mom },
+    yoy!=null&&{ label:'Year over year',   value:fmtCur(last365), trend:yoy },
+    bestCat  &&{ label:'Top category', value:bestCat[0], sub:fmtCur(bestCat[1])+' in sales' },
+    { label:'Period start',  value:fmtDate(start), sub:'Earliest record' },
+    { label:'Period end',    value:fmtDate(end),   sub:'Latest record' },
+  ].filter(Boolean).map((k, i)=>`
+    <div class="kpi-card" style="--reveal-delay:${Math.min(i * 0.05, 0.35)}s">
+      <div class="kpi-card-top">
+        <span class="kpi-icon">${typeof svIcon === 'function' ? svIcon(kpiIconFor(k.label), 20) : ''}</span>
+        <div class="kpi-label">${k.label}</div>
+      </div>
       <div class="kpi-value">${k.value}</div>
       ${k.trend!=null
-        ?`<div class="${k.trend>=0?'kpi-trend-up':'kpi-trend-down'}">${k.trend>=0?'▲':'▼'} ${Math.abs(k.trend).toFixed(1)}% vs prior</div>`
+        ?`<div class="${k.trend>=0?'kpi-trend-up':'kpi-trend-down'}">${k.trend>=0?'↑':'↓'} ${Math.abs(k.trend).toFixed(1)}% vs prior</div>`
         :`<div class="kpi-sub">${k.sub||''}</div>`}
     </div>`).join('');
 
@@ -750,16 +950,16 @@ function buildTrendChart() {
   const q1=sorted[Math.floor(sorted.length*0.25)],q3=sorted[Math.floor(sorted.length*0.75)],iqr=q3-q1;
   const anomDates=[],anomVals=[];
   dates.forEach((d,i)=>{ if(sales[i]<q1-1.5*iqr||sales[i]>q3+1.5*iqr){anomDates.push(d);anomVals.push(sales[i]);} });
-  if(anomDates.length) addNavNotification('⚠️ Anomaly Detected',`${anomDates.length} unusual week(s) found in your sales data.`,'warning');
+  if(anomDates.length) addNavNotification('Unusual sales week', `${anomDates.length} week(s) outside the normal range.`, 'warning');
   Plotly.newPlot('trendChart',[
-    { x:dates,y:sales,type:'scatter',mode:'lines',name:'Weekly Sales',
-      line:{color:'#6366f1',width:2.2,shape:'spline'},fill:'tozeroy',fillcolor:'rgba(99,102,241,0.07)',
+    { x:dates,y:sales,type:'scatter',mode:'lines',name:'Weekly sales',
+      line:{color:'#2F5233',width:2.2,shape:'spline'},fill:'tozeroy',fillcolor:'rgba(47,82,51,0.08)',
       hovertemplate:'<b>%{x|%b %d, %Y}</b><br>$%{y:,.0f}<extra></extra>' },
-    { x:dates,y:ma4,type:'scatter',mode:'lines',name:'4-Wk Moving Avg',
-      line:{color:'#a78bfa',width:1.8,dash:'dot'},hovertemplate:'<b>%{x|%b %d, %Y}</b><br>MA: $%{y:,.0f}<extra></extra>' },
-    anomDates.length?{ x:anomDates,y:anomVals,type:'scatter',mode:'markers',name:'⚠️ Anomaly',
-      marker:{size:11,color:'#ef4444',symbol:'diamond',line:{width:2,color:'#fff'}},
-      hovertemplate:'<b>⚠️ Anomaly %{x|%b %d, %Y}</b><br>$%{y:,.0f}<extra></extra>' }:null,
+    { x:dates,y:ma4,type:'scatter',mode:'lines',name:'4-week average',
+      line:{color:'#5A7A5E',width:1.8,dash:'dot'},hovertemplate:'<b>%{x|%b %d, %Y}</b><br>MA: $%{y:,.0f}<extra></extra>' },
+    anomDates.length?{ x:anomDates,y:anomVals,type:'scatter',mode:'markers',name:'Unusual week',
+      marker:{size:10,color:'#B91C1C',symbol:'circle',line:{width:2,color:'#fff'}},
+      hovertemplate:'<b>%{x|%b %d, %Y}</b><br>$%{y:,.0f}<extra></extra>' }:null,
   ].filter(Boolean),{ ...plotLayout('Weekly Sales + Anomaly Detection'), height:330 },plotCfg());
 }
 
@@ -771,7 +971,7 @@ function buildCategoryChart() {
   const map = {};
   mappedData.forEach(r => { map[r.category] = (map[r.category]||0)+r.revenue; });
   const sorted = Object.entries(map).sort((a,b)=>b[1]-a[1]);
-  const colors = ['#6366f1','#8b5cf6','#06b6d4','#10b981','#f97316','#eab308'];
+  const colors = ['#2F5233','#5A7A5E','#0369A1','#A16207','#4A674D','#C2410C'];
   Plotly.newPlot('catChart',[{
     type:'bar',orientation:'h',
     x:sorted.map(e=>e[1]),y:sorted.map(e=>e[0]),
@@ -790,7 +990,7 @@ function buildMonthlyChart() {
   const mean = avg(vals);
   Plotly.newPlot('monthChart',[{
     type:'bar',x:Object.keys(map),y:vals,
-    marker:{color:vals.map(v=>v>=mean?'rgba(99,102,241,0.85)':'rgba(139,92,246,0.5)')},
+    marker:{color:vals.map(v=>v>=mean?'rgba(47,82,51,0.85)':'rgba(90,122,94,0.45)')},
     hovertemplate:'<b>%{x}</b><br>$%{y:,.0f}<extra></extra>',
   }],{ ...plotLayout(''), height:250, bargap:0.25, margin:{l:50,r:10,t:10,b:60} },plotCfg());
 }
@@ -803,13 +1003,13 @@ function buildTopPerformers() {
   mappedData.forEach(r=>{ if(!map[r.category])map[r.category]={sales:0,count:0}; map[r.category].sales+=r.sales; map[r.category].count++; });
   const sorted=Object.entries(map).sort((a,b)=>b[1].sales-a[1].sales);
   const total=sorted.reduce((s,[,v])=>s+v.sales,0);
-  const colors=['#6366f1','#8b5cf6','#06b6d4','#10b981','#f97316'];
+  const colors=['#2F5233','#5A7A5E','#0369A1','#A16207','#4A674D'];
   const section=document.createElement('section');
   section.id='topPerfSection'; section.className='app-section';
   section.innerHTML=`
     <div class="container">
       <div class="section-label">Performance</div>
-      <h2 class="section-title">Top <span class="gradient-text">Performers</span></h2>
+      <h2 class="section-title">Top <span class="accent-word">performers</span></h2>
       <p class="section-sub">Ranked by total sales contribution. Instantly see which segments are driving your revenue.</p>
       <div class="perf-grid">
         ${sorted.map(([cat,v],i)=>{ const pct=(v.sales/total*100).toFixed(1); return `
@@ -838,8 +1038,62 @@ function downloadChart(id) {
    ======================== */
 function updateForecast() {
   if (weeklyData.length < 4) return;
-  const weeks   = parseInt(document.getElementById('horizonSelect').value);
-  const smooth  = document.getElementById('smoothSelect').value;
+  const weeks  = parseInt(document.getElementById('horizonSelect').value);
+  const model  = document.getElementById('modelSelect')?.value || 'ensemble';
+
+  fetchBackendForecast(weeks, model).then(data => {
+    if (data?.forecast?.length) {
+      lastBackendForecast = data;
+      renderBackendForecast(data);
+    } else {
+      renderClientForecast(weeks);
+    }
+  });
+}
+
+function renderBackendForecast(data) {
+  const sales = weeklyData.map(w => w.sales);
+  const fDates = data.forecast.map(f => new Date(f.date));
+  forecastValues = data.forecast.map(f => f.sales);
+  const lower = data.forecast.map(f => f.lower);
+  const upper = data.forecast.map(f => f.upper);
+
+  const modelLabel = {
+    ensemble: 'Smart mix',
+    arima: 'Trend-based',
+    prophet: 'Seasonal',
+    lstm: 'Advanced patterns',
+  }[data.model] || 'Estimate';
+
+  Plotly.newPlot('forecastChart',[
+    { x:weeklyData.map(w=>w.date),y:sales,type:'scatter',mode:'lines',name:'Past sales',
+      line:{color:'#2F5233',width:2.2,shape:'spline'},fill:'tozeroy',fillcolor:'rgba(47,82,51,0.06)',
+      hovertemplate:'<b>%{x|%b %d, %Y}</b><br>$%{y:,.0f}<extra></extra>' },
+    { x:[...fDates,...fDates.slice().reverse()],y:[...upper,...lower.slice().reverse()],
+      fill:'toself',fillcolor:'rgba(194,65,12,0.08)',line:{color:'transparent'},hoverinfo:'skip',name:'Range' },
+    { x:fDates,y:forecastValues,type:'scatter',mode:'lines+markers',name:`Estimate (${modelLabel})`,
+      line:{color:'#C2410C',width:2.2,dash:'dot'},marker:{size:6,color:'#C2410C',line:{width:1.5,color:'#fff'}},
+      hovertemplate:'<b>%{x|%b %d, %Y}</b><br>Forecast: $%{y:,.0f}<extra></extra>' },
+    { x:[weeklyData[weeklyData.length-1].date,fDates[0]],y:[sales[sales.length-1],forecastValues[0]],
+      mode:'lines',line:{color:'#C2410C',width:1,dash:'dot'},showlegend:false,hoverinfo:'skip' },
+  ],{ ...plotLayout(`Sales outlook — ${modelLabel}`), height:370 },plotCfg());
+
+  const trendPct = forecastValues[0] ? ((forecastValues[forecastValues.length-1]-forecastValues[0])/forecastValues[0]*100) : 0;
+  const acc = data.metrics_rolling?.accuracy ?? data.metrics?.accuracy;
+  const mapeStr = acc != null ? `${acc.toFixed(1)}%` : '—';
+
+  document.getElementById('forecastKpis').innerHTML = [
+    {label:'Total expected',  val:fmtCur(forecastValues.reduce((a,b)=>a+b,0))},
+    {label:'Best week',       val:fmtCur(Math.max(...forecastValues))},
+    {label:'Average week',    val:fmtCur(avg(forecastValues))},
+    {label:'Trend',           val:(trendPct>=0?'▲ ':'▼ ')+Math.abs(trendPct).toFixed(1)+'%'},
+    {label:'How close we were', val:mapeStr},
+    {label:'Method used',     val:modelLabel},
+  ].map(k=>`<div class="fkpi"><div class="fkpi-val">${k.val}</div><div class="fkpi-lab">${k.label}</div></div>`).join('');
+}
+
+function renderClientForecast(weeks) {
+  const smooth  = document.getElementById('smoothSelect')?.value || 'medium';
   const alpha   = smooth==='light'?0.4:smooth==='heavy'?0.1:0.22;
   const sales   = weeklyData.map(w=>w.sales);
   const n       = sales.length;
@@ -857,16 +1111,16 @@ function updateForecast() {
 
   Plotly.newPlot('forecastChart',[
     { x:weeklyData.map(w=>w.date),y:sales,type:'scatter',mode:'lines',name:'Historical',
-      line:{color:'#6366f1',width:2.2,shape:'spline'},fill:'tozeroy',fillcolor:'rgba(99,102,241,0.06)',
+      line:{color:'#2F5233',width:2.2,shape:'spline'},fill:'tozeroy',fillcolor:'rgba(47,82,51,0.06)',
       hovertemplate:'<b>%{x|%b %d, %Y}</b><br>$%{y:,.0f}<extra></extra>' },
     { x:[...fDates,...fDates.slice().reverse()],y:[...upper,...lower.slice().reverse()],
-      fill:'toself',fillcolor:'rgba(249,115,22,0.09)',line:{color:'transparent'},hoverinfo:'skip',name:'±12% Band' },
-    { x:fDates,y:forecastValues,type:'scatter',mode:'lines+markers',name:'Forecast',
-      line:{color:'#f97316',width:2.2,dash:'dot'},marker:{size:6,color:'#f97316',line:{width:1.5,color:'#fff'}},
+      fill:'toself',fillcolor:'rgba(194,65,12,0.08)',line:{color:'transparent'},hoverinfo:'skip',name:'Range' },
+    { x:fDates,y:forecastValues,type:'scatter',mode:'lines+markers',name:'Estimate',
+      line:{color:'#C2410C',width:2.2,dash:'dot'},marker:{size:6,color:'#C2410C',line:{width:1.5,color:'#fff'}},
       hovertemplate:'<b>%{x|%b %d, %Y}</b><br>Forecast: $%{y:,.0f}<extra></extra>' },
     { x:[weeklyData[weeklyData.length-1].date,fDates[0]],y:[sales[sales.length-1],forecastValues[0]],
-      mode:'lines',line:{color:'#f97316',width:1,dash:'dot'},showlegend:false,hoverinfo:'skip' },
-  ],{ ...plotLayout('Sales Forecast — Weighted Ensemble (Linear Trend + EMA)'), height:370 },plotCfg());
+      mode:'lines',line:{color:'#C2410C',width:1,dash:'dot'},showlegend:false,hoverinfo:'skip' },
+  ],{ ...plotLayout('Sales outlook (estimate)'), height:370 },plotCfg());
 
   const trendPct = forecastValues[0]?((forecastValues[forecastValues.length-1]-forecastValues[0])/forecastValues[0]*100):0;
 
@@ -882,225 +1136,16 @@ function updateForecast() {
     const hPred = holdout.map((_,i)=>Math.max(0,0.6*(ticept+tslope*(tn+i))+0.4*tema));
     const mape  = holdout.reduce((s,a,i)=>s+Math.abs((a-hPred[i])/(a||1)),0)/holdout.length*100;
     const acc   = Math.max(0,100-mape);
-    mapeStr = acc.toFixed(1)+'% '+(acc>=90?'🟢':acc>=75?'🟡':'🔴');
+    mapeStr = acc.toFixed(1)+'%';
   }
 
   document.getElementById('forecastKpis').innerHTML = [
-    {label:'Forecast Total',  val:fmtCur(forecastValues.reduce((a,b)=>a+b,0))},
-    {label:'Peak Week',       val:fmtCur(Math.max(...forecastValues))},
-    {label:'Avg Weekly',      val:fmtCur(avg(forecastValues))},
-    {label:'Trend Direction', val:(trendPct>=0?'▲ ':'▼ ')+Math.abs(trendPct).toFixed(1)+'%'},
-    {label:'Model Accuracy',  val:mapeStr},
+    {label:'Total expected',  val:fmtCur(forecastValues.reduce((a,b)=>a+b,0))},
+    {label:'Best week',       val:fmtCur(Math.max(...forecastValues))},
+    {label:'Average week',    val:fmtCur(avg(forecastValues))},
+    {label:'Trend',           val:(trendPct>=0?'▲ ':'▼ ')+Math.abs(trendPct).toFixed(1)+'%'},
+    {label:'How close we were', val:mapeStr},
   ].map(k=>`<div class="fkpi"><div class="fkpi-val">${k.val}</div><div class="fkpi-lab">${k.label}</div></div>`).join('');
-
-  // If alert section exists already, update its forecast demand display
-  updateAlertForecastDemand();
-}
-
-/* ========================
-   YoY COMPARISON CHART
-   ======================== */
-function buildYoYChart() {
-  const el = document.getElementById('yoyChart'); if (!el) return;
-  const src = rawMappedData.length ? rawMappedData : mappedData;
-  const byMonth = {};
-  src.forEach(r=>{
-    const y=r.date.getFullYear(), m=r.date.getMonth(), k=`${y}-${m}`;
-    if(!byMonth[k]) byMonth[k]={y,m,s:0};
-    byMonth[k].s+=r.sales;
-  });
-  const years=[...new Set(Object.values(byMonth).map(v=>v.y))].sort();
-  if(years.length<2){el.innerHTML='<div style="padding:2rem;color:var(--text-3);font-size:0.82rem">Need 2+ years of data for YoY comparison.</div>';return;}
-  const curY=years[years.length-1], prevY=years[years.length-2];
-  const mons=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const cur=mons.map((_,m)=>byMonth[`${curY}-${m}`]?.s||0);
-  const prev=mons.map((_,m)=>byMonth[`${prevY}-${m}`]?.s||0);
-  Plotly.newPlot('yoyChart',[
-    {x:mons,y:prev,type:'bar',name:String(prevY),marker:{color:'rgba(139,92,246,0.55)'},hovertemplate:`<b>%{x} ${prevY}</b><br>$%{y:,.0f}<extra></extra>`},
-    {x:mons,y:cur, type:'bar',name:String(curY), marker:{color:'rgba(99,102,241,0.9)'},hovertemplate:`<b>%{x} ${curY}</b><br>$%{y:,.0f}<extra></extra>`},
-  ],{...plotLayout(`${prevY} vs ${curY} — Year-over-Year`),height:280,barmode:'group',bargap:0.22},plotCfg());
-}
-
-/* ========================
-   PRODUCT / SKU CHART
-   ======================== */
-function buildProductChart() {
-  const sec = document.getElementById('productSection');
-  const prodData = (rawMappedData.length?rawMappedData:mappedData).filter(r=>r.product);
-  if(!prodData.length){if(sec)sec.style.display='none';return;}
-  const pm={};
-  prodData.forEach(r=>{pm[r.product]=(pm[r.product]||0)+r.sales;});
-  const sorted=Object.entries(pm).sort((a,b)=>b[1]-a[1]).slice(0,12);
-  if(sec)sec.style.display='';
-  const el=document.getElementById('productChart');if(!el)return;
-  const colors=['#6366f1','#8b5cf6','#06b6d4','#10b981','#f97316','#eab308'];
-  Plotly.newPlot('productChart',[{
-    type:'bar',orientation:'h',
-    x:sorted.map(e=>e[1]),y:sorted.map(e=>e[0]),
-    marker:{color:sorted.map((_,i)=>colors[i%colors.length])},
-    hovertemplate:'<b>%{y}</b><br>$%{x:,.0f}<extra></extra>',
-  }],{...plotLayout(''),height:Math.max(220,sorted.length*30+60),margin:{l:130,r:10,t:10,b:30}},plotCfg());
-}
-
-/* ========================
-   PERSIST — IndexedDB (per-user)
-   ======================== */
-
-/* ========================
-   ALERTS & NOTIFICATIONS
-   ======================== */
-function maybeAddAlertSection() {
-  if (document.getElementById('alertSection')) return; // already injected
-  if (!document.getElementById('resultsWrap') || document.getElementById('resultsWrap').style.display === 'none') return;
-  const sessionEmail = getSession()?.email || '';
-
-  // Build & inject alert section before the footer
-  const footer = document.querySelector('.footer');
-  const section = document.createElement('section');
-  section.id        = 'alertSection';
-  section.className = 'app-section';
-  section.innerHTML = `
-    <div class="container">
-      <div class="section-label">Alerts &amp; Notifications</div>
-      <h2 class="section-title">Inventory <span class="gradient-text">Alert Engine</span></h2>
-      <p class="section-sub">Set your inventory level and safety threshold. Salevora automatically checks conditions after every analysis and fires instant browser alerts — no manual action needed.</p>
-
-      <div class="alert-panel">
-        <div class="alert-panel-title">⚙️ Configure Alert Parameters</div>
-        <div class="alert-panel-sub">Alerts fire automatically when an alert condition is detected. You can also trigger a manual check anytime.</div>
-
-        <div class="alert-grid">
-          <div class="alert-field">
-            <label>📦 Current Inventory (units)</label>
-            <input type="number" id="alertInventory" value="10000" min="0" oninput="runAlertCheck()" />
-          </div>
-          <div class="alert-field">
-            <label>⚠️ Safety Stock Threshold (units)</label>
-            <input type="number" id="alertThreshold" value="15000" min="0" oninput="runAlertCheck()" />
-          </div>
-          <div class="alert-field">
-            <label>🕐 Scheduled Auto-Check Time</label>
-            <input type="time" id="alertTime" value="10:00" />
-          </div>
-        </div>
-
-        <div id="alertForecastDisplay" style="font-size:0.83rem;color:var(--text-2);margin-bottom:0.5rem"></div>
-
-        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:0;margin-top:0.5rem">
-          <button class="btn btn-primary" onclick="runAlertCheck()">🔍 Check Now</button>
-          <button class="btn btn-outline" onclick="scheduleAlert()">⏰ Schedule Daily Auto-Check</button>
-        </div>
-
-        <div id="alertResult" class="alert-result" style="display:none"></div>
-        <div id="scheduleStatus" style="font-size:0.8rem;color:var(--text-3);margin-top:0.75rem"></div>
-      </div>
-    </div>`;
-
-  footer.parentElement.insertBefore(section, footer);
-  runAlertCheck();
-  startAlertScheduler();
-}
-
-function getForecastedDemand() {
-  if (!forecastValues.length) return 0;
-  // next-4-week demand estimate
-  return forecastValues.slice(0,4).reduce((a,b)=>a+b,0);
-}
-
-function updateAlertForecastDemand() {
-  const el = document.getElementById('alertForecastDisplay');
-  if (!el) return;
-  const demand = getForecastedDemand();
-  el.textContent = `📊 Forecasted demand (next 4 weeks): ${fmtCur(demand)} units based on your uploaded data.`;
-}
-
-function runAlertCheck(silent = false) {
-  const inventory = parseFloat(document.getElementById('alertInventory')?.value) || 0;
-  const threshold = parseFloat(document.getElementById('alertThreshold')?.value) || 0;
-  const demand    = getForecastedDemand();
-  const resultEl  = document.getElementById('alertResult');
-
-  updateAlertForecastDemand();
-  if (!resultEl) return;
-  resultEl.style.display = '';
-
-  const isLow       = inventory < threshold;
-  const isHighDemand = demand > inventory;
-
-  let cls, title, body;
-  if (isLow && isHighDemand) {
-    cls   = 'danger';
-    title = '🚨 CRITICAL: Inventory Alert Triggered!';
-    body  = `Both conditions are met — inventory is below safety stock AND forecasted demand exceeds available stock.`;
-    if (!silent) {
-      const inv = inventory.toLocaleString();
-      addNavNotification(
-        '🚨 Critical: Inventory Alert',
-        `Stock (${inv} units) is critically low — forecasted demand ${fmtCur(demand)} exceeds it.`,
-        'danger'
-      );
-      toast('🚨 Critical inventory alert! Stock is critically low.', 'warning', 6000);
-    }
-  } else if (isLow) {
-    cls   = 'warning';
-    title = '⚠️ WARNING: Inventory Below Safety Threshold';
-    body  = `Inventory (${inventory.toLocaleString()}) is below your threshold (${threshold.toLocaleString()}), but demand is within safe range for now.`;
-    if (!silent) {
-      addNavNotification(
-        '⚠️ Warning: Low Inventory',
-        `Stock (${inventory.toLocaleString()}) is below safety threshold (${threshold.toLocaleString()}).`,
-        'warning'
-      );
-      toast('⚠️ Inventory below safety threshold!', 'warning', 5000);
-    }
-  } else {
-    cls   = 'safe';
-    title = '✅ Inventory Levels Are Stable';
-    body  = `Inventory (${inventory.toLocaleString()}) is above threshold (${threshold.toLocaleString()}) and demand is fully covered.`;
-  }
-
-  resultEl.className = 'alert-result ' + cls;
-  resultEl.innerHTML = `
-    <div class="alert-result-title">${title}</div>
-    <div>${body}</div>
-    <div class="alert-stats">
-      <div class="alert-stat"><span class="alert-stat-val">${inventory.toLocaleString()}</span><span class="alert-stat-lab">Current Stock</span></div>
-      <div class="alert-stat"><span class="alert-stat-val">${threshold.toLocaleString()}</span><span class="alert-stat-lab">Safety Threshold</span></div>
-      <div class="alert-stat"><span class="alert-stat-val">${fmtCur(demand)}</span><span class="alert-stat-lab">Forecasted Demand (4 wk)</span></div>
-    </div>`;
-}
-
-/* Browser notification permission - kept for legacy, but navbar bell is primary */
-function requestBrowserNotif() {
-  toast('🔔 Notifications appear in the navbar bell above.', 'info');
-}
-
-/* Scheduled daily auto-check */
-let alertIntervalId = null;
-function scheduleAlert() {
-  const timeVal  = document.getElementById('alertTime')?.value || '10:00';
-  const [h, m]   = timeVal.split(':').map(Number);
-  const statusEl = document.getElementById('scheduleStatus');
-  if (statusEl) statusEl.textContent = `⏰ Daily auto-check scheduled for ${fmtTime12(h,m)} — will fire automatically. Keep this tab open.`;
-  toast(`✅ Auto-check scheduled for ${fmtTime12(h,m)} every day.`, 'success');
-
-  if (alertIntervalId) clearInterval(alertIntervalId);
-  alertIntervalId = setInterval(() => {
-    const now = new Date();
-    if (now.getHours() === h && now.getMinutes() === m) {
-      runAlertCheck(); // fires toast + browser notification automatically inside
-    }
-  }, 60000);
-}
-
-function startAlertScheduler() {
-  // No-op: scheduler starts when user explicitly sets a time
-}
-
-function fmtTime12(h, m) {
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12  = h % 12 || 12;
-  return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
 }
 
 /* ========================
@@ -1163,13 +1208,13 @@ function downloadCSV() {
    ======================== */
 function plotLayout(title) {
   return {
-    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
-    font:{family:'Inter,sans-serif',color:'#94a3b8',size:12},
-    title: title ? {text:title,font:{size:13,color:'#cbd5e1'},x:0.01} : undefined,
-    margin:{l:50,r:20,t:title?42:16,b:40},
-    xaxis:{gridcolor:'rgba(148,163,184,0.08)',zerolinecolor:'rgba(148,163,184,0.1)',tickfont:{color:'#64748b',size:11}},
-    yaxis:{gridcolor:'rgba(148,163,184,0.08)',zerolinecolor:'rgba(148,163,184,0.1)',tickfont:{color:'#64748b',size:11}},
-    legend:{bgcolor:'rgba(13,20,39,0.7)',bordercolor:'rgba(99,102,241,0.2)',borderwidth:1,font:{color:'#cbd5e1',size:11}},
+    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+    font: { family: 'DM Sans, sans-serif', color: '#5C5650', size: 12 },
+    title: title ? { text: title, font: { size: 13, color: '#1F1C18', family: 'DM Sans' }, x: 0.01 } : undefined,
+    margin: { l: 50, r: 20, t: title ? 42 : 16, b: 40 },
+    xaxis: { gridcolor: 'rgba(31,28,24,0.06)', zerolinecolor: 'rgba(31,28,24,0.08)', tickfont: { color: '#8A837A', size: 11 } },
+    yaxis: { gridcolor: 'rgba(31,28,24,0.06)', zerolinecolor: 'rgba(31,28,24,0.08)', tickfont: { color: '#8A837A', size: 11 } },
+    legend: { bgcolor: 'rgba(255,255,255,0.9)', bordercolor: '#DDD8CE', borderwidth: 1, font: { color: '#5C5650', size: 11 } },
   };
 }
 function plotCfg() { return {displayModeBar:true,displaylogo:false,modeBarButtonsToRemove:['lasso2d','select2d'],responsive:true}; }

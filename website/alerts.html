@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <title>Salevora — Email alerts</title>
+  <meta name="description" content="Customize when and where you receive low-stock email reminders." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+  <link rel="icon" type="image/png" href="assets/favicon.png?v=12" />
+  <link rel="apple-touch-icon" href="assets/logo.png?v=12" />
+  <meta name="theme-color" content="#2F5233" />
+  <link rel="stylesheet" href="style.css?v=12" />
+</head>
+<body class="page-app page-alerts page-dashboard">
+
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <img class="brand-logo" src="assets/logo.png?v=12" alt="" width="36" height="36" />
+      <span class="sidebar-brand-text">Salevora</span>
+    </div>
+    <div class="sidebar-profile">
+      <div class="sidebar-avatar" id="sidebarAvatar"><span data-icon="user"></span></div>
+      <div class="sidebar-user">
+        <div class="sidebar-name" id="sidebarUserName">Account</div>
+        <div class="sidebar-role">Email alerts</div>
+      </div>
+    </div>
+    <hr class="sidebar-divider" />
+    <div class="sidebar-nav-label">Pages</div>
+    <nav class="sidebar-nav">
+      <a href="index.html" class="sidebar-link"><span class="sidebar-link-icon" data-icon="dashboard"></span><span class="sidebar-link-label">Dashboard</span></a>
+      <a href="inventory.html" class="sidebar-link"><span class="sidebar-link-icon" data-icon="boxes"></span><span class="sidebar-link-label">Stock</span></a>
+      <a href="alerts.html" class="sidebar-link active"><span class="sidebar-link-icon" data-icon="mail"></span><span class="sidebar-link-label">Email</span></a>
+    </nav>
+    <div class="sidebar-spacer"></div>
+    <nav class="sidebar-nav sidebar-nav--bottom">
+      <button type="button" class="sidebar-link sidebar-link--btn" onclick="handleAlertsLogout()"><span class="sidebar-link-icon" data-icon="logout"></span><span class="sidebar-link-label">Sign out</span></button>
+    </nav>
+  </aside>
+
+  <div class="app-main">
+    <header class="dash-header">
+      <div class="dash-search-wrap">
+        <span class="dash-search-icon" data-icon="search"></span>
+        <input type="search" class="dash-search" placeholder="Search settings…" disabled />
+      </div>
+      <div class="dash-header-actions"></div>
+    </header>
+
+    <div class="dash-content">
+
+<section class="dash-panel stock-hero-compact reveal">
+  <div class="dash-panel-title">Reminders</div>
+  <h1 class="dash-panel-heading">Email alert settings</h1>
+  <p class="stock-hero-sub">Choose who gets low-stock emails, when they go out, and how often we can remind you about the same items.</p>
+</section>
+
+<main class="alerts-main reveal-stagger">
+  <form class="alert-panel alerts-form" id="alertSettingsForm" onsubmit="saveAlertSettings(event)">
+    <div class="alert-panel-title">Your preferences</div>
+    <p class="alert-panel-sub">These settings apply to your account. Daily sends run while this tab is open in your browser.</p>
+
+    <div class="alert-grid">
+      <div class="alert-field alert-field--wide">
+        <label for="alertEmailTo">Send reminders to</label>
+        <input type="email" id="alertEmailTo" placeholder="you@yourstore.com" required />
+        <span class="field-hint">Can differ from your sign-in email — useful for a team inbox.</span>
+      </div>
+
+      <div class="alert-field">
+        <label for="alertEmailEnabled">Email reminders</label>
+        <select id="alertEmailEnabled">
+          <option value="1">On — send emails</option>
+          <option value="0">Off — no emails</option>
+        </select>
+      </div>
+
+      <div class="alert-field">
+        <label for="alertTime">Daily send time</label>
+        <input type="time" id="alertTime" value="10:00" required />
+        <span class="field-hint">Local time on your device.</span>
+      </div>
+
+      <div class="alert-field">
+        <label for="alertScheduleEnabled">Daily schedule</label>
+        <select id="alertScheduleEnabled">
+          <option value="1">On — send at chosen time</option>
+          <option value="0">Off — manual send only</option>
+        </select>
+      </div>
+
+      <div class="alert-field">
+        <label for="alertCooldown">Repeat cooldown (hours)</label>
+        <input type="number" id="alertCooldown" min="1" max="168" value="24" required />
+        <span class="field-hint">Minimum wait before the same SKU is emailed again.</span>
+      </div>
+    </div>
+
+    <div class="alerts-actions">
+      <button type="submit" class="btn btn-primary" id="saveAlertsBtn">Save settings</button>
+      <button type="button" class="btn btn-outline" onclick="sendAlertsNow(false)"><span class="btn-icon" data-icon="send"></span>Send now</button>
+      <button type="button" class="btn btn-outline" onclick="sendAlertsNow(true)">Force resend</button>
+    </div>
+
+    <div id="alertSaveResult" class="alert-result" style="display:none"></div>
+    <div id="scheduleStatus" class="schedule-status"></div>
+  </form>
+
+  <div class="alert-panel alerts-history-panel">
+    <div class="alert-panel-title">Recent emails</div>
+    <p class="alert-panel-sub">Last stock reminders sent from this app.</p>
+    <div id="alertHistoryList" class="alert-history-list">
+      <div class="alert-history-empty">No emails sent yet.</div>
+    </div>
+  </div>
+</main>
+
+    </div><!-- /.dash-content -->
+
+  <footer class="footer footer--dash">
+    <div class="footer-inner">
+      <p class="footer-copy">Built for sellers who want clarity, not clutter.</p>
+    </div>
+  </footer>
+
+  </div><!-- /.app-main -->
+</div><!-- /.app-shell -->
+
+<div id="toastContainer"></div>
+
+<script src="copy.js?v=12"></script>
+<script src="icons.js?v=12"></script>
+<script src="ui.js?v=10"></script>
+<script src="auth.js?v=12"></script>
+<script src="api-client.js?v=12"></script>
+<script src="alerts.js?v=12"></script>
+</body>
+</html>

@@ -3,257 +3,363 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Salevora – Sign In</title>
-  <meta name="description" content="Salevora Sales Intelligence Platform – Login to access your dashboard." />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <title>Salevora — Sign in</title>
+  <meta name="description" content="Upload your sales file and see what to expect next." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/png" href="assets/favicon.png?v=12" />
+  <link rel="apple-touch-icon" href="assets/logo.png?v=12" />
+  <meta name="theme-color" content="#2F5233" />
+  <link rel="stylesheet" href="style.css?v=12" />
 </head>
-<body>
+<body class="page-auth">
 
-<!-- ============================================================
-     AUTH SCREEN
-     ============================================================ -->
 <div id="authScreen" class="auth-screen">
 
-  <!-- Left panel — branding -->
   <div class="auth-left">
-    <div class="auth-left-inner">
+    <div class="auth-orbs" aria-hidden="true">
+      <span class="auth-orb auth-orb-1"></span>
+      <span class="auth-orb auth-orb-2"></span>
+      <span class="auth-orb auth-orb-3"></span>
+    </div>
+    <img class="auth-watermark" src="assets/logo.png?v=12" alt="" aria-hidden="true" />
+    <div class="auth-left-inner auth-stagger">
       <div class="auth-logo">
-        <span class="logo-icon">⚡</span>
+        <img class="brand-logo brand-logo--lg" src="assets/logo.png?v=12" alt="" width="44" height="44" />
         <span class="logo-text">Salevora</span>
       </div>
-      <h1 class="auth-tagline">Predict Sales.<br /><span class="gradient-text">Dominate Markets.</span></h1>
-      <p class="auth-desc">Upload your CSV or Excel sales file and get instant AI-powered forecasts, trend charts and KPIs — all processed securely in your browser.</p>
+      <h1 class="auth-tagline">Sales clarity for<br />people who sell things.</h1>
+      <p class="auth-desc">Upload your spreadsheet once. See where sales are headed, which products need restocking, and get a heads-up before shelves run empty.</p>
       <div class="auth-features">
-        <div class="af-item"><span class="af-icon">📊</span><span>Interactive forecasting charts</span></div>
-        <div class="af-item"><span class="af-icon">🤖</span><span>Ensemble AI prediction engine</span></div>
-        <div class="af-item"><span class="af-icon">🔐</span><span>Your data never leaves the device</span></div>
-        <div class="af-item"><span class="af-icon">⚡</span><span>Instant results from CSV or Excel</span></div>
+        <div class="af-item"><span class="af-icon"></span>Charts from your own sales history</div>
+        <div class="af-item"><span class="af-icon"></span>Weekly forecasts you can actually use</div>
+        <div class="af-item"><span class="af-icon"></span>Stock reminders by email</div>
+        <div class="af-item"><span class="af-icon"></span>Works with Excel and CSV files</div>
       </div>
-    </div>
-    <div class="auth-left-bg">
-      <div class="blob blob-1"></div>
-      <div class="blob blob-2"></div>
     </div>
   </div>
 
-  <!-- Right panel — form -->
   <div class="auth-right">
-    <div class="auth-form-wrap">
-
-      <!-- Tabs -->
-      <div class="auth-tabs">
-        <button class="auth-tab active" id="tabLogin"    onclick="showTab('login')">Sign In</button>
-        <button class="auth-tab"        id="tabRegister" onclick="showTab('register')">Create Account</button>
+    <div class="auth-form-wrap reveal">
+      <div class="auth-form-brand">
+        <img src="assets/logo.png?v=12" alt="Salevora" width="56" height="56" />
       </div>
 
-      <!-- ---- LOGIN FORM ---- -->
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tabLogin" onclick="showTab('login')"><span class="auth-tab-icon" data-icon="user"></span>Sign in</button>
+        <button class="auth-tab" id="tabRegister" onclick="showTab('register')"><span class="auth-tab-icon" data-icon="sparkles"></span>Register</button>
+      </div>
+
       <form id="loginForm" class="auth-form" onsubmit="handleLogin(event)">
         <h2 class="form-title">Welcome back</h2>
-        <p class="form-sub">Sign in to your Salevora account</p>
+        <p class="form-sub">Enter your email and password to continue.</p>
 
-        <div class="field-group">
-          <label class="field-label" for="loginEmail">Email address</label>
-          <input class="field-input" id="loginEmail" type="email" placeholder="you@example.com" required autocomplete="email" />
+        <div class="field-group field-with-icon">
+          <label class="field-label" for="loginEmail">Email</label>
+          <div class="field-icon-wrap">
+            <span class="field-icon" data-icon="mail"></span>
+            <input class="field-input" id="loginEmail" type="email" placeholder="you@yourstore.com" required autocomplete="email" />
+          </div>
         </div>
 
-        <div class="field-group">
+        <div class="field-group field-with-icon">
           <label class="field-label" for="loginPassword">Password</label>
-          <div class="password-wrap">
-            <input class="field-input" id="loginPassword" type="password" placeholder="Enter your password" required autocomplete="current-password" />
-            <button type="button" class="eye-btn" onclick="togglePwd('loginPassword', this)">👁</button>
+          <div class="field-icon-wrap">
+            <span class="field-icon" data-icon="lock"></span>
+            <input class="field-input" id="loginPassword" type="password" placeholder="Your password" required autocomplete="current-password" />
+            <button type="button" class="eye-btn" onclick="togglePwd('loginPassword', this)">Show</button>
           </div>
+          <p class="form-forgot"><a href="#" onclick="showForgotForm(); return false;">Forgot password?</a></p>
         </div>
 
         <div id="loginError" class="form-error" style="display:none"></div>
-
-        <button type="submit" class="btn btn-primary form-submit" id="loginSubmit">
-          Sign In
-        </button>
-
-        <p class="form-switch">Don't have an account? <a href="#" onclick="showTab('register')">Create one →</a></p>
+        <button type="submit" class="btn btn-primary form-submit" id="loginSubmit">Sign in</button>
+        <p class="form-switch">New here? <a href="#" onclick="showTab('register')">Create an account</a></p>
       </form>
 
-      <!-- ---- REGISTER FORM ---- -->
+      <form id="forgotForm" class="auth-form" style="display:none" onsubmit="handleForgotPassword(event)">
+        <div class="form-icon-badge" data-icon="mail"></div>
+        <h2 class="form-title">Reset your password</h2>
+        <p class="form-sub">Enter your account email and we’ll send you a reset code.</p>
+
+        <div class="field-group field-with-icon">
+          <label class="field-label" for="forgotEmail">Email</label>
+          <div class="field-icon-wrap">
+            <span class="field-icon" data-icon="mail"></span>
+            <input class="field-input" id="forgotEmail" type="email" placeholder="you@yourstore.com" required autocomplete="email" />
+          </div>
+        </div>
+
+        <div id="forgotError" class="form-error" style="display:none"></div>
+        <div id="forgotSuccess" class="form-success" style="display:none"></div>
+        <button type="submit" class="btn btn-primary form-submit" id="forgotSubmit">Send reset code</button>
+        <p class="form-switch"><a href="#" onclick="showTab('login'); return false;">Back to sign in</a></p>
+      </form>
+
+      <form id="resetForm" class="auth-form" style="display:none" onsubmit="handleResetPassword(event)">
+        <div class="form-icon-badge" data-icon="lock"></div>
+        <h2 class="form-title">Choose a new password</h2>
+        <p class="form-sub" id="resetSub">Enter the code from your email and your new password.</p>
+
+        <div class="field-group field-with-icon">
+          <label class="field-label" for="resetCode">Reset code</label>
+          <div class="field-icon-wrap">
+            <span class="field-icon" data-icon="lock"></span>
+            <input class="field-input otp-input" id="resetCode" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="000000" required autocomplete="one-time-code" />
+          </div>
+        </div>
+
+        <div class="field-group field-with-icon">
+          <label class="field-label" for="resetPassword">New password</label>
+          <div class="field-icon-wrap">
+            <span class="field-icon" data-icon="lock"></span>
+            <input class="field-input" id="resetPassword" type="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" />
+            <button type="button" class="eye-btn" onclick="togglePwd('resetPassword', this)">Show</button>
+          </div>
+        </div>
+
+        <div id="resetError" class="form-error" style="display:none"></div>
+        <button type="submit" class="btn btn-primary form-submit" id="resetSubmit">Update password</button>
+        <button type="button" class="btn btn-outline form-submit" style="margin-top:0.5rem" onclick="resendResetCode()">Resend code</button>
+        <p class="form-switch"><a href="#" onclick="showTab('login'); return false;">Back to sign in</a></p>
+      </form>
+
+      <form id="otpForm" class="auth-form" style="display:none" onsubmit="handleOtpVerify(event)">
+        <div class="form-icon-badge" data-icon="mail"></div>
+        <h2 class="form-title">Check your inbox</h2>
+        <p class="form-sub" id="otpSub">We sent a 6-digit code to your email.</p>
+
+        <div class="field-group field-with-icon">
+          <label class="field-label" for="otpCode">Verification code</label>
+          <div class="field-icon-wrap">
+            <span class="field-icon" data-icon="lock"></span>
+            <input class="field-input otp-input" id="otpCode" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="000000" required autocomplete="one-time-code" />
+          </div>
+        </div>
+
+        <div id="otpError" class="form-error" style="display:none"></div>
+        <button type="submit" class="btn btn-primary form-submit" id="otpSubmit">Continue</button>
+        <button type="button" class="btn btn-outline form-submit" style="margin-top:0.5rem" onclick="resendOtp()">Resend code</button>
+        <p class="form-switch"><a href="#" onclick="cancelOtp()">Go back</a></p>
+      </form>
+
       <form id="registerForm" class="auth-form" style="display:none" onsubmit="handleRegister(event)">
         <h2 class="form-title">Create your account</h2>
-        <p class="form-sub">Start predicting your sales for free</p>
+        <p class="form-sub">Takes about a minute. No credit card needed.</p>
 
-        <div class="field-group">
+        <div class="field-group field-with-icon">
           <label class="field-label" for="regName">Full name</label>
-          <input class="field-input" id="regName" type="text" placeholder="Full Name" required autocomplete="name" />
+          <div class="field-icon-wrap">
+            <span class="field-icon" data-icon="user"></span>
+            <input class="field-input" id="regName" type="text" placeholder="Jane Smith" required autocomplete="name" />
+          </div>
         </div>
 
-        <div class="field-group">
-          <label class="field-label" for="regEmail">Email address</label>
-          <input class="field-input" id="regEmail" type="email" placeholder="you@example.com" required autocomplete="email" />
+        <div class="field-group field-with-icon">
+          <label class="field-label" for="regEmail">Email</label>
+          <div class="field-icon-wrap">
+            <span class="field-icon" data-icon="mail"></span>
+            <input class="field-input" id="regEmail" type="email" placeholder="you@yourstore.com" required autocomplete="email" />
+          </div>
         </div>
 
-        <div class="field-group">
+        <div class="field-group field-with-icon">
           <label class="field-label" for="regPassword">Password</label>
-          <div class="password-wrap">
-            <input class="field-input" id="regPassword" type="password" placeholder="Min 6 characters" required minlength="6" autocomplete="new-password" />
-            <button type="button" class="eye-btn" onclick="togglePwd('regPassword', this)">👁</button>
+          <div class="field-icon-wrap">
+            <span class="field-icon" data-icon="lock"></span>
+            <input class="field-input" id="regPassword" type="password" placeholder="At least 6 characters" required minlength="6" autocomplete="new-password" />
+            <button type="button" class="eye-btn" onclick="togglePwd('regPassword', this)">Show</button>
           </div>
         </div>
 
-        <div class="field-group">
-          <label class="field-label" for="regConfirm">Confirm password</label>
-          <div class="password-wrap">
-            <input class="field-input" id="regConfirm" type="password" placeholder="Repeat password" required autocomplete="new-password" />
-            <button type="button" class="eye-btn" onclick="togglePwd('regConfirm', this)">👁</button>
-          </div>
-        </div>
-
-        <div id="regError"   class="form-error"   style="display:none"></div>
+        <div id="regError" class="form-error" style="display:none"></div>
         <div id="regSuccess" class="form-success" style="display:none"></div>
-
-        <button type="submit" class="btn btn-primary form-submit" id="regSubmit">
-          Create Account
-        </button>
-
-        <p class="form-switch">Already have an account? <a href="#" onclick="showTab('login')">Sign in →</a></p>
+        <button type="submit" class="btn btn-primary form-submit" id="regSubmit">Create account</button>
+        <p class="form-switch">Already registered? <a href="#" onclick="showTab('login')">Sign in</a></p>
       </form>
 
     </div>
   </div>
 </div>
 
-<!-- ============================================================
-     MAIN APP (shown after login)
-     ============================================================ -->
-<div id="appScreen" style="display:none">
+<div id="appScreen" class="app-shell" style="display:none">
 
-  <!-- Navbar -->
-  <nav class="navbar" id="navbar">
-    <div class="nav-inner">
-      <a href="#" class="nav-logo" onclick="scrollTop()">
-        <span class="logo-icon">⚡</span>
-        <span class="logo-text">Salevora</span>
-      </a>
-      <div class="nav-right">
-        <span class="nav-user" id="navUser"></span>
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <img class="brand-logo" src="assets/logo.png?v=12" alt="" width="36" height="36" />
+      <span class="sidebar-brand-text">Salevora</span>
+    </div>
+    <div class="sidebar-profile">
+      <div class="sidebar-avatar" id="sidebarAvatar"><span data-icon="user"></span></div>
+      <div class="sidebar-user">
+        <div class="sidebar-name" id="sidebarUserName">Account</div>
+        <div class="sidebar-role">Seller dashboard</div>
+      </div>
+    </div>
+    <hr class="sidebar-divider" />
+    <div class="sidebar-nav-label">Pages</div>
+    <nav class="sidebar-nav">
+      <a href="index.html" class="sidebar-link active"><span class="sidebar-link-icon" data-icon="dashboard"></span><span class="sidebar-link-label">Dashboard</span></a>
+      <a href="inventory.html" class="sidebar-link"><span class="sidebar-link-icon" data-icon="boxes"></span><span class="sidebar-link-label">Stock</span></a>
+      <a href="alerts.html" class="sidebar-link"><span class="sidebar-link-icon" data-icon="mail"></span><span class="sidebar-link-label">Email</span></a>
+    </nav>
+    <div class="sidebar-spacer"></div>
+    <nav class="sidebar-nav sidebar-nav--bottom">
+      <button type="button" class="sidebar-link sidebar-link--btn" onclick="handleLogout()"><span class="sidebar-link-icon" data-icon="logout"></span><span class="sidebar-link-label">Sign out</span></button>
+    </nav>
+  </aside>
 
+  <div class="app-main">
+    <header class="dash-header">
+      <div class="dash-search-wrap">
+        <span class="dash-search-icon" data-icon="search"></span>
+        <input type="search" class="dash-search" id="dashSearch" placeholder="Search records…" oninput="onDashSearch(this.value)" />
+      </div>
+      <div class="dash-header-actions">
         <div class="notif-bell-wrap" id="notifBellWrap">
           <button class="notif-bell-btn" id="notifBellBtn" onclick="toggleNotifDropdown()" aria-label="Notifications">
-            🔔
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
             <span class="notif-badge" id="notifBadge" style="display:none">0</span>
           </button>
           <div class="notif-dropdown" id="notifDropdown" style="display:none">
             <div class="notif-dropdown-header">
               <span class="notif-dropdown-title">Notifications</span>
-              <button class="notif-clear-btn" onclick="clearAllNotifications()">Clear all</button>
+              <button class="notif-clear-btn" onclick="clearAllNotifications()">Clear</button>
             </div>
             <div class="notif-list" id="notifList">
-              <div class="notif-empty">No notifications yet</div>
+              <div class="notif-empty">Nothing new</div>
             </div>
           </div>
         </div>
-
-        <a href="inventory.html" class="btn btn-outline" style="text-decoration:none">📦 Live Inventory</a>
-        <button class="btn btn-outline nav-pdf" onclick="exportPDF()" title="Export PDF Report">📄 PDF Report</button>
-        <button class="btn btn-outline nav-logout" onclick="handleLogout()">Sign Out</button>
+        <button type="button" class="dash-icon-btn" onclick="exportPDF()" title="Export report" data-icon="download"></button>
       </div>
-    </div>
-  </nav>
+    </header>
 
-  <!-- Restore Banner -->
+    <div class="dash-content">
   <div id="restoreBanner" class="restore-banner" style="display:none">
     <div class="restore-inner">
-      <span class="restore-icon">💾</span>
       <div class="restore-text">
-        <strong>Previous session found:</strong>
+        <strong>Pick up where you left off:</strong>
         <span id="restoreInfo"></span>
       </div>
-      <button class="btn btn-primary restore-btn" onclick="restoreFromStorage()">Restore Data</button>
-      <button class="restore-dismiss" onclick="clearStoredData()" title="Dismiss">✕</button>
+      <button class="btn btn-primary restore-btn" onclick="restoreFromStorage()">Restore session</button>
+      <button class="restore-dismiss" onclick="clearStoredData()" title="Dismiss">&times;</button>
     </div>
   </div>
 
-  <!-- Upload -->
-  <section class="app-section upload-section" id="uploadSection">
+  <div id="serverDataBanner" class="restore-banner" style="display:none">
+    <div class="restore-inner">
+      <div class="restore-text">
+        <strong>Sales saved on your account:</strong>
+        <span id="serverDataInfo"></span>
+      </div>
+      <button class="btn btn-primary restore-btn" onclick="loadServerSales()">Load saved data</button>
+      <button class="restore-dismiss" onclick="dismissServerBanner()" title="Dismiss">&times;</button>
+    </div>
+  </div>
+
+  <section class="app-section upload-section reveal dash-panel" id="uploadSection">
     <div class="container">
       <div class="app-hero">
-        <h1 class="app-hero-title">Upload &amp; <span class="gradient-text">Predict</span></h1>
-        <p class="app-hero-sub">Your data, your insights — instantly. Upload any sales file and get AI-powered forecasts, trends, and alerts in seconds.</p>
+        <div class="upload-logo-wrap">
+          <img class="upload-logo" src="assets/logo.png?v=12" alt="Salevora" width="64" height="64" />
+        </div>
+        <h1 class="app-hero-title">Upload your sales file</h1>
+        <p class="app-hero-sub">Drop a CSV or Excel file with your sales history. We'll map the columns and show you what's ahead.</p>
       </div>
 
       <div class="upload-drop-zone" id="dropZone">
-        <div class="upload-icon">📂</div>
-        <div class="upload-drop-title">Drag &amp; drop your sales file here</div>
-        <div class="upload-drop-sub">or click to browse &nbsp;·&nbsp; CSV &amp; Excel supported</div>
+        <div class="upload-icon-wrap upload-bounce">
+          <span data-icon="upload"></span>
+        </div>
+        <div class="upload-drop-title">Drop your file here</div>
+        <div class="upload-drop-sub">or click to browse · .csv, .xlsx, .xls</div>
         <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" hidden />
       </div>
-      <div class="sample-data-bar">
-        <span class="sample-data-label">No file? See it in action instantly:</span>
-        <button class="btn-sample" onclick="loadSampleData()">⚡ Load 2-Year Sample Dataset</button>
-      </div>
-
       <div id="uploadStatus" class="upload-status"></div>
 
-      <!-- column mapping -->
       <div class="col-config" id="colConfig" style="display:none">
-        <h3 class="col-config-title">Map Columns</h3>
+        <h3 class="col-config-title">Match your columns</h3>
         <div class="col-config-grid" id="colConfigGrid"></div>
-        <p class="col-config-hint">Auto-detected from your file. Adjust if needed.</p>
-        <button class="btn btn-primary" onclick="runPrediction()">⚡ Run Forecast &amp; Predictions</button>
+        <p class="col-config-hint">We guessed these from your file. Adjust anything that looks off.</p>
+        <button class="btn btn-primary" onclick="runPrediction()">View results</button>
       </div>
     </div>
   </section>
 
-  <!-- Results (hidden until file loaded) -->
   <div id="resultsWrap" style="display:none">
 
-    <!-- KPI row -->
-    <section class="app-section" id="kpiSection">
-      <div class="container">
-        <div class="section-label">Analysis</div>
-        <h2 class="section-title">Dataset <span class="gradient-text">Summary</span></h2>
+    <section class="app-section reveal" id="kpiSection">
+      <div id="ringStats" class="dash-ring-row reveal-stagger"></div>
+
+      <div class="dash-panel">
+        <div class="dash-panel-head">
+          <div>
+            <div class="dash-panel-title">Overview</div>
+            <h2 class="dash-panel-heading">Sales summary</h2>
+          </div>
+        </div>
         <div id="insightBanner" class="insight-banner" style="display:none"></div>
         <p class="section-sub" id="summaryText"></p>
+        <div id="statBoxes" class="dash-stat-row reveal-stagger"></div>
         <div id="goalTracker" style="display:none;margin-bottom:1.5rem"></div>
-        <div class="kpi-grid" id="kpiGrid"></div>
+        <div class="kpi-grid reveal-stagger" id="kpiGrid"></div>
         <div id="catsWrap" class="cats-wrap" style="display:none">
-          <span class="cats-label">Categories:</span>
+          <span class="cats-label">Categories</span>
           <div id="catsPills" class="cats-pills"></div>
         </div>
       </div>
     </section>
 
-    <!-- Charts -->
-    <section class="app-section section-dark">
-      <div class="container">
-        <div class="section-label">Trends</div>
-        <h2 class="section-title">Sales <span class="gradient-text">Charts</span></h2>
+    <section class="app-section reveal">
+      <div class="dash-panel">
+        <div class="dash-panel-head">
+          <div>
+            <div class="dash-panel-title">Trends</div>
+            <h2 class="dash-panel-heading">Sales over time</h2>
+          </div>
+        </div>
         <div class="chart-card">
-          <div class="chart-card-header"><span>Historical Trend</span><button class="btn-chart-dl" onclick="downloadChart('trendChart')">📸 PNG</button></div>
+          <div class="chart-card-header"><span>Weekly sales</span><button class="btn-chart-dl" onclick="downloadChart('trendChart')">Save image</button></div>
           <div id="trendChart" class="chart-area"></div>
         </div>
-        <div class="charts-row">
+        <div class="charts-row reveal-stagger">
           <div class="chart-card">
-            <div class="chart-card-header"><span>Revenue by Category</span><button class="btn-chart-dl" onclick="downloadChart('catChart')">📸 PNG</button></div>
+            <div class="chart-card-header"><span>By category</span><button class="btn-chart-dl" onclick="downloadChart('catChart')">Save image</button></div>
             <div id="catChart" class="chart-area-sm"></div>
           </div>
           <div class="chart-card">
-            <div class="chart-card-header"><span>Monthly Totals</span><button class="btn-chart-dl" onclick="downloadChart('monthChart')">📸 PNG</button></div>
+            <div class="chart-card-header"><span>Monthly totals</span><button class="btn-chart-dl" onclick="downloadChart('monthChart')">Save image</button></div>
             <div id="monthChart" class="chart-area-sm"></div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Forecast -->
-    <section class="app-section" id="forecastSection">
-      <div class="container">
-        <div class="section-label">Forecast</div>
-        <h2 class="section-title"><span class="gradient-text">Prediction Engine</span></h2>
-        <p class="section-sub">Weighted Ensemble: Linear Trend + Exponential Moving Average — computed in your browser.</p>
+    <section class="app-section reveal" id="forecastSection">
+      <div class="dash-panel">
+        <div class="dash-panel-head">
+          <div>
+            <div class="dash-panel-title">Forecast</div>
+            <h2 class="dash-panel-heading">What to expect next</h2>
+          </div>
+        </div>
+        <p class="section-sub">Estimates based on your historical sales. Adjust the settings below to explore different views.</p>
         <div class="forecast-controls">
-          <label class="ctrl-label">Horizon:
+          <label class="ctrl-label">Method
+            <select id="modelSelect" class="ctrl-select" onchange="updateForecast()">
+              <option value="ensemble" selected>Combined (recommended)</option>
+              <option value="arima">Trend-based</option>
+              <option value="prophet">Seasonal</option>
+              <option value="lstm">Pattern-based</option>
+            </select>
+          </label>
+          <label class="ctrl-label">Horizon
             <select id="horizonSelect" class="ctrl-select" onchange="updateForecast()">
               <option value="4">4 weeks</option>
               <option value="8">8 weeks</option>
@@ -262,7 +368,7 @@
               <option value="24">24 weeks</option>
             </select>
           </label>
-          <label class="ctrl-label">Smoothing:
+          <label class="ctrl-label">Smoothing
             <select id="smoothSelect" class="ctrl-select" onchange="updateForecast()">
               <option value="light">Light</option>
               <option value="medium" selected>Medium</option>
@@ -271,22 +377,25 @@
           </label>
         </div>
         <div class="chart-card">
-          <div class="chart-card-header"><span>Forecast</span><button class="btn-chart-dl" onclick="downloadChart('forecastChart')">📸 PNG</button></div>
+          <div class="chart-card-header"><span>Projected sales</span><button class="btn-chart-dl" onclick="downloadChart('forecastChart')">Save image</button></div>
           <div id="forecastChart" class="chart-area"></div>
         </div>
         <div class="forecast-kpis" id="forecastKpis"></div>
       </div>
     </section>
 
-    <!-- Table -->
-    <section class="app-section section-dark" id="tableSection">
-      <div class="container">
-        <div class="section-label">Data</div>
-        <h2 class="section-title">Data <span class="gradient-text">Table</span></h2>
+    <section class="app-section reveal" id="tableSection">
+      <div class="dash-panel">
+        <div class="dash-panel-head">
+          <div>
+            <div class="dash-panel-title">Records</div>
+            <h2 class="dash-panel-heading">Sales data</h2>
+          </div>
+        </div>
         <div class="table-toolbar">
-          <input type="text" id="tableSearch" class="table-search" placeholder="🔍 Search…" oninput="filterTable()" />
+          <input type="text" id="tableSearch" class="table-search" placeholder="Search records…" oninput="filterTable()" />
           <span class="table-meta" id="tableMeta"></span>
-          <button class="btn btn-outline" onclick="downloadCSV()">⬇ Export CSV</button>
+          <button class="btn btn-outline" onclick="downloadCSV()">Download CSV</button>
         </div>
         <div class="table-wrap">
           <div class="table-scroll">
@@ -302,18 +411,25 @@
 
   </div><!-- /resultsWrap -->
 
-  <!-- Footer -->
-  <footer class="footer">
-    <div class="container footer-inner">
-      <span class="footer-brand"><span class="logo-icon">⚡</span><span class="logo-text">Salevora</span></span>
-      <span class="footer-copy">© 2025 Salevora · Your data stays in your browser</span>
+    </div><!-- /.dash-content -->
+
+  <footer class="footer footer--dash">
+    <div class="footer-inner">
+      <span class="footer-copy">Your data stays on your account · © 2026 Salevora</span>
     </div>
   </footer>
+
+  </div><!-- /.app-main -->
 
 </div><!-- /appScreen -->
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
-<script src="app.js"></script>
+<script src="copy.js?v=12"></script>
+<script src="icons.js?v=12"></script>
+<script src="ui.js?v=10"></script>
+<script src="auth.js?v=5"></script>
+<script src="api-client.js?v=12"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>

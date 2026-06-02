@@ -16,25 +16,56 @@ from __future__ import annotations
 
 import io
 import shutil
+import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
 import pandas as pd
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query, Request
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 # ------------------------------------------------------------------ #
 #  Paths
 # ------------------------------------------------------------------ #
 BASE_DIR      = Path(__file__).resolve().parent
+sys.path.insert(0, str(BASE_DIR))
+load_dotenv(BASE_DIR / ".env", override=True)
+WEBSITE_DIR   = BASE_DIR / "website"
+ASSET_VERSION = "12"  # bump when CSS/JS changes to bust browser cache
 PROCESSED_DIR = BASE_DIR / "data" / "processed"
 LIVE_CSV      = PROCESSED_DIR / "live_sales.csv"
 BACKUP_CSV    = PROCESSED_DIR / "live_sales_backup.csv"
 
 REQUIRED_COLS = {"date", "sales"}          # minimum required columns
 OPTIONAL_COLS = {"revenue", "category"}    # nice-to-have
+
+from src.auth.database import get_db_info, init_db
+from src.auth.deps import get_current_user, get_optional_user
+from src.auth.router import router as auth_router
+from src.alerts.router import router as alerts_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    db = get_db_info()
+    print(f"  Database: {db['backend']}" + (f" ({db.get('database', '')})" if db["backend"] == "mongodb" else ""))
+    from src.alerts import brevo
+    if brevo.is_configured():
+        s = brevo.sender()
+        print(f"  Email (Brevo): ready — sender {s['email']}")
+    else:
+        print("  Email (Brevo): NOT configured — set BREVO_* in .env for OTP & alerts")
+    yield
+    if db["backend"] == "mongodb":
+        from src.db.mongo import close_client
+        close_client()
+
 
 # ------------------------------------------------------------------ #
 #  App
@@ -43,6 +74,7 @@ app = FastAPI(
     title="Salevora Data API",
     description="Upload CSV / Excel sales data to update the live dashboard in real-time.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -51,6 +83,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router)
+app.include_router(alerts_router)
+
+
+@app.middleware("http")
+async def disable_frontend_cache(request: Request, call_next):
+    """Always serve fresh HTML/CSS/JS — avoids stale purple theme in browser cache."""
+    response = await call_next(request)
+    path = request.url.path.lower()
+    if path == "/" or path.endswith((".html", ".css", ".js")):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 
 # ------------------------------------------------------------------ #
@@ -86,6 +133,13 @@ def _normalise(df: pd.DataFrame) -> pd.DataFrame:
     if "category" not in df.columns:
         df["category"] = "Uncategorised"
 
+    if "product_id" in df.columns:
+        df["product_id"] = df["product_id"].astype(str).str.strip()
+    if "quantity" in df.columns:
+        df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0)
+    if "price" in df.columns:
+        df["price"] = pd.to_numeric(df["price"], errors="coerce").fillna(0)
+
     return df.sort_values("date").reset_index(drop=True)
 
 
@@ -99,9 +153,15 @@ def _ensure_backup() -> None:
 #  Routes
 # ------------------------------------------------------------------ #
 
-@app.get("/", tags=["Health"])
+@app.get("/api/health", tags=["Health"])
 def health_check():
-    return {"status": "ok", "service": "Salevora Data API"}
+    db = get_db_info()
+    return {
+        "status": "ok" if db.get("connected") else "degraded",
+        "service": "Salevora Data API",
+        "version": "1.0.0",
+        "database": db,
+    }
 
 
 @app.get("/data/info", tags=["Data"])
@@ -131,6 +191,7 @@ async def upload_data(
         "replace",
         description="'replace' overwrites live data; 'append' merges and deduplicates by date+category.",
     ),
+    user: dict = Depends(get_current_user),
 ):
     """
     Upload a sales CSV or Excel file to update the live dashboard.
@@ -161,7 +222,7 @@ async def upload_data(
     if mode == "replace":
         df_final = df_new
 
-    else:  # append
+    else:  
         if not LIVE_CSV.exists():
             df_final = df_new
         else:
@@ -180,6 +241,20 @@ async def upload_data(
     # Save
     df_final.to_csv(LIVE_CSV, index=False)
 
+    inv_summary = None
+    alert_result = None
+    try:
+        from src.inventory.service import evaluate
+        inv_summary = evaluate(str(LIVE_CSV))["summary"]
+    except Exception:
+        pass
+
+    try:
+        from src.alerts.service import auto_send_for_user
+        alert_result = auto_send_for_user(user)
+    except Exception:
+        pass
+
     return JSONResponse(
         status_code=200,
         content={
@@ -190,10 +265,9 @@ async def upload_data(
                 "start": str(df_final["date"].min().date()),
                 "end":   str(df_final["date"].max().date()),
             },
-            "message": (
-                "live_sales.csv has been updated. "
-                "Refresh the Streamlit dashboard (clear cache) to see the new data."
-            ),
+            "inventory":   inv_summary,
+            "alert_email": alert_result,
+            "message": "Your sales file was saved and your stock check was updated.",
         },
     )
 
@@ -241,202 +315,333 @@ def get_columns():
     }
 
 
-@app.get("/data/sample", tags=["Data"])
-def get_sample(n: int = Query(10, ge=1, le=100, description="Number of sample rows (1-100)")):
-    """Return the first N rows of the live dataset as a preview."""
-    if not LIVE_CSV.exists():
-        raise HTTPException(status_code=404, detail="live_sales.csv not found.")
-    df = pd.read_csv(LIVE_CSV, parse_dates=["date"])
-    df["date"] = df["date"].dt.strftime("%Y-%m-%d")
-    sample = df.head(n)
-    return {
-        "rows_returned": int(len(sample)),
-        "total_rows":    int(len(df)),
-        "data": sample.to_dict(orient="records"),
-    }
+# ------------------------------------------------------------------ #
+#  ML Forecasting (ARIMA + Prophet + Neural Net Ensemble)
+# ------------------------------------------------------------------ #
+
+@app.get("/api/forecast", tags=["Forecast"])
+def get_forecast(
+    horizon: int = Query(12, ge=1, le=52, description="Forecast horizon in weeks"),
+    model: str = Query("ensemble", description="arima | prophet | lstm | ensemble"),
+):
+    """Run sales forecast on the live dataset using Python ML models."""
+    try:
+        from src.prediction.predictor import run_forecast
+        return run_forecast(horizon=horizon, model=model, data_path=str(LIVE_CSV))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="No sales data found. Upload a CSV first.")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Forecast failed: {exc}")
+
+
+@app.get("/api/analytics/summary", tags=["Analytics"])
+def analytics_summary():
+    """Return aggregated analytics from the live dataset."""
+    try:
+        from src.prediction.predictor import analytics_summary as _summary
+        return _summary(data_path=str(LIVE_CSV))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="No sales data found.")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/models/status", tags=["Forecast"])
+def models_status():
+    """Return training artifact info if available."""
+    artifact_path = BASE_DIR / "models" / "forecast_artifact.joblib"
+    if not artifact_path.exists():
+        return {
+            "trained": False,
+            "message": "Run `python src/training/train.py` to train and evaluate models.",
+            "available_models": ["arima", "prophet", "lstm", "ensemble"],
+        }
+    import joblib
+    artifact = joblib.load(artifact_path)
+    return {"trained": True, **artifact}
 
 
 # ------------------------------------------------------------------ #
-#  Real-Time Inventory Simulation Module
+#  Inventory Intelligence (sales CSV + inventory API)
 # ------------------------------------------------------------------ #
-import random, math, asyncio
-from datetime import datetime, timedelta
+import asyncio
+from datetime import timezone
+from typing import List, Optional
+
 from fastapi import WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
 
-_PRODUCTS = [
-    {"sku":"ELEC-001","name":"Laptop Pro 15in","category":"Electronics","stock":45,"reorder_pt":20,"max_stock":100,"cost":899.99,"lead_time":7,"daily_demand":3.2},
-    {"sku":"ELEC-002","name":"Wireless Headphones","category":"Electronics","stock":12,"reorder_pt":25,"max_stock":150,"cost":129.99,"lead_time":5,"daily_demand":8.5},
-    {"sku":"ELEC-003","name":"USB-C Hub 7-Port","category":"Electronics","stock":88,"reorder_pt":30,"max_stock":200,"cost":49.99,"lead_time":3,"daily_demand":12.1},
-    {"sku":"ELEC-004","name":"Mechanical Keyboard","category":"Electronics","stock":7,"reorder_pt":15,"max_stock":80,"cost":159.99,"lead_time":6,"daily_demand":4.3},
-    {"sku":"CLTH-001","name":"Premium Hoodie XL","category":"Clothing","stock":234,"reorder_pt":50,"max_stock":500,"cost":39.99,"lead_time":14,"daily_demand":15.7},
-    {"sku":"CLTH-002","name":"Running Shoes M10","category":"Clothing","stock":18,"reorder_pt":30,"max_stock":200,"cost":89.99,"lead_time":10,"daily_demand":9.2},
-    {"sku":"CLTH-003","name":"Yoga Pants S/M","category":"Clothing","stock":67,"reorder_pt":40,"max_stock":300,"cost":29.99,"lead_time":12,"daily_demand":18.4},
-    {"sku":"FOOD-001","name":"Protein Bar Box 24","category":"Food & Bev","stock":156,"reorder_pt":100,"max_stock":600,"cost":24.99,"lead_time":2,"daily_demand":45.3},
-    {"sku":"FOOD-002","name":"Green Tea 100 Bags","category":"Food & Bev","stock":34,"reorder_pt":80,"max_stock":400,"cost":12.99,"lead_time":3,"daily_demand":28.6},
-    {"sku":"FOOD-003","name":"Whey Protein 2kg","category":"Food & Bev","stock":9,"reorder_pt":25,"max_stock":150,"cost":59.99,"lead_time":4,"daily_demand":6.8},
-    {"sku":"SPRT-001","name":"Dumbbell Set 20kg","category":"Sports","stock":23,"reorder_pt":10,"max_stock":60,"cost":79.99,"lead_time":8,"daily_demand":2.1},
-    {"sku":"SPRT-002","name":"Yoga Mat Premium","category":"Sports","stock":5,"reorder_pt":20,"max_stock":100,"cost":34.99,"lead_time":5,"daily_demand":7.3},
-    {"sku":"SPRT-003","name":"Resistance Bands Set","category":"Sports","stock":112,"reorder_pt":30,"max_stock":250,"cost":19.99,"lead_time":4,"daily_demand":11.2},
-    {"sku":"HOME-001","name":"Air Purifier Room","category":"Home & Garden","stock":31,"reorder_pt":15,"max_stock":80,"cost":199.99,"lead_time":9,"daily_demand":4.7},
-    {"sku":"HOME-002","name":"Smart LED Strip 5m","category":"Home & Garden","stock":67,"reorder_pt":25,"max_stock":200,"cost":29.99,"lead_time":6,"daily_demand":8.9},
-    {"sku":"HOME-003","name":"Indoor Plant Pot Set","category":"Home & Garden","stock":2,"reorder_pt":20,"max_stock":120,"cost":24.99,"lead_time":7,"daily_demand":5.4},
-]
-_sim_stock = {p["sku"]: float(p["stock"]) for p in _PRODUCTS}
-_last_tick = datetime.utcnow()
+from src.inventory import store as inv_store
+from src.inventory.service import (
+    build_alerts,
+    build_forecast_detail,
+    build_items,
+    build_kpis,
+    evaluate,
+)
 
-def _tick():
-    global _last_tick
-    now = datetime.utcnow()
-    h = (now - _last_tick).total_seconds() / 3600.0
-    if h < 0.001: return
-    for p in _PRODUCTS:
-        sold = p["daily_demand"] / 24.0 * h * (0.75 + random.random() * 0.5)
-        _sim_stock[p["sku"]] = max(0.0, _sim_stock[p["sku"]] - sold)
-    _last_tick = now
 
-def _eoq(p):
-    return math.sqrt(max(1, 2 * p["daily_demand"] * 365 * 50 / (0.20 * max(0.01, p["cost"]))))
+def _utc_now():
+    from datetime import datetime
+    return datetime.now(timezone.utc)
 
-def _status(s, p):
-    if s <= 0: return "stockout"
-    if s <= p["reorder_pt"] * 0.5: return "critical"
-    if s <= p["reorder_pt"]: return "warning"
-    return "ok"
 
-def _abc(p):
-    v = p["daily_demand"] * 365 * p["cost"]
-    return "A" if v >= 50000 else ("B" if v >= 15000 else "C")
+def _require_sales():
+    if not LIVE_CSV.exists():
+        raise HTTPException(status_code=404, detail="No sales data. Upload a CSV with product_id first.")
 
-def _build(p):
-    s = _sim_stock[p["sku"]]
-    days = s / p["daily_demand"] if p["daily_demand"] > 0 else 9999
-    return {"sku": p["sku"], "name": p["name"], "category": p["category"],
-            "stock": round(s), "reorder_pt": p["reorder_pt"], "max_stock": p["max_stock"],
-            "cost": p["cost"], "lead_time": p["lead_time"], "daily_demand": round(p["daily_demand"], 1),
-            "days_of_stock": round(days, 1), "eoq": round(_eoq(p)),
-            "stock_value": round(s * p["cost"], 2), "stock_pct": round(s / p["max_stock"] * 100, 1),
-            "status": _status(s, p), "abc_class": _abc(p)}
 
-@app.get("/api/inventory/live", tags=["Inventory"])
-def inv_live():
-    _tick(); items = sorted([_build(p) for p in _PRODUCTS], key=lambda x: x["days_of_stock"])
-    return {"items": items, "updated_at": datetime.utcnow().isoformat() + "Z"}
+@app.get("/api/app/status", tags=["Health"])
+def app_status(user: dict | None = Depends(get_optional_user)):
+    """Single bootstrap endpoint for the frontend."""
+    from src.alerts import brevo
 
-@app.get("/api/inventory/kpis", tags=["Inventory"])
-def inv_kpis():
-    _tick(); items = [_build(p) for p in _PRODUCTS]
-    total_val = sum(i["stock_value"] for i in items)
-    avg_days = sum(min(i["days_of_stock"], 999) for i in items) / len(items)
-    return {"total_skus": len(_PRODUCTS), "total_value": round(total_val, 2),
-            "critical": sum(1 for i in items if i["status"] == "critical"),
-            "at_risk": sum(1 for i in items if i["status"] == "warning"),
-            "stockouts": sum(1 for i in items if i["status"] == "stockout"),
-            "avg_days_stock": round(avg_days, 1),
-            "in_stock_pct": round(sum(1 for i in items if i["stock"] > 0) / len(items) * 100, 1),
-            "updated_at": datetime.utcnow().isoformat() + "Z"}
+    payload: dict = {
+        "online": True,
+        "version": "1.0.0",
+        "email_ready": brevo.is_configured(),
+        "database": get_db_info(),
+        "sales": None,
+        "inventory": None,
+    }
+    if LIVE_CSV.exists():
+        df = pd.read_csv(LIVE_CSV, parse_dates=["date"])
+        payload["sales"] = {
+            "rows": int(len(df)),
+            "date_start": str(df["date"].min().date()),
+            "date_end": str(df["date"].max().date()),
+        }
+        try:
+            items = build_items(str(LIVE_CSV))
+            alerts = build_alerts(items)
+            payload["inventory"] = {
+                "products": len(items),
+                "alerts": len(alerts),
+                "critical": sum(1 for a in alerts if a.get("status") == "critical"),
+            }
+        except Exception:
+            pass
+    if user:
+        payload["user"] = {
+            "name": user["name"],
+            "email": user["email"],
+            "alerts_enabled": user.get("alerts_enabled", True),
+        }
+    return payload
 
-@app.get("/api/inventory/alerts", tags=["Inventory"])
-def inv_alerts():
-    _tick()
-    alerts = []
-    for p in _PRODUCTS:
-        item = _build(p)
-        if item["status"] in ("critical", "warning", "stockout"):
-            item["order_qty"] = round(_eoq(p)); item["order_cost"] = round(_eoq(p) * p["cost"], 2)
-            alerts.append(item)
-    return {"alerts": sorted(alerts, key=lambda x: x["days_of_stock"]), "count": len(alerts), "updated_at": datetime.utcnow().isoformat() + "Z"}
-
-@app.get("/api/inventory/forecast", tags=["Inventory"])
-def inv_forecast(sku: str = None):
-    _tick(); results = []
-    for p in _PRODUCTS:
-        if sku and p["sku"] != sku: continue
-        running = _sim_stock[p["sku"]]; days = []
-        for i in range(7):
-            d = p["daily_demand"] * (0.80 + random.random() * 0.40)
-            running = max(0, running - d)
-            days.append({"day": (datetime.utcnow() + timedelta(days=i+1)).strftime("%a %d %b"), "demand": round(d, 1), "projected_stock": round(running)})
-        results.append({"sku": p["sku"], "name": p["name"], "category": p["category"],
-                        "current_stock": round(_sim_stock[p["sku"]]), "daily_demand": p["daily_demand"],
-                        "forecast": days, "stockout_day": next((d["day"] for d in days if d["projected_stock"] == 0), None),
-                        "reorder_recommended": round(_eoq(p))})
-    return {"forecasts": results, "updated_at": datetime.utcnow().isoformat() + "Z"}
-
-@app.get("/api/inventory/abc", tags=["Inventory"])
-def inv_abc():
-    _tick()
-    items = sorted([{"sku": p["sku"], "name": p["name"], "category": p["category"],
-                     "abc_class": _abc(p), "annual_value": round(p["daily_demand"] * 365 * p["cost"], 2),
-                     "daily_demand": p["daily_demand"], "cost": p["cost"]} for p in _PRODUCTS], key=lambda x: -x["annual_value"])
-    total = sum(i["annual_value"] for i in items); cum = 0
-    for i in items: cum += i["annual_value"]; i["cumulative_pct"] = round(cum / total * 100, 1)
-    return {"items": items, "total_annual_value": round(total, 2)}
-
-@app.post("/api/inventory/restock/{sku}", tags=["Inventory"])
-def inv_restock(sku: str, qty: float = 0):
-    p = next((x for x in _PRODUCTS if x["sku"] == sku), None)
-    if not p: raise HTTPException(status_code=404, detail=f"SKU {sku} not found.")
-    qty = qty if qty > 0 else _eoq(p)
-    _sim_stock[sku] = min(p["max_stock"], _sim_stock[sku] + qty)
-    return {"sku": sku, "name": p["name"], "qty_added": round(qty), "new_stock": round(_sim_stock[sku])}
-
-from pydantic import BaseModel
-from typing import List
 
 class StockUpdate(BaseModel):
     sku: str
     stock: float
+    reorder_pt: Optional[float] = None
+    lead_time: Optional[int] = Field(default=7, ge=1, le=90)
+    name: Optional[str] = None
+    category: Optional[str] = None
+    unit_cost: Optional[float] = None
+    max_stock: Optional[float] = None
+
+
+@app.get("/api/inventory/stock", tags=["Inventory"])
+def inv_get_stock():
+    """Return inventory levels synced from external API."""
+    return {"items": inv_store.list_stock(), "count": len(inv_store.load_all())}
+
 
 @app.post("/api/inventory/sync", tags=["Inventory"])
-def inv_sync(updates: List[StockUpdate]):
-    """Webhook to receive live data from POS/ERP (Shopify, SAP, etc.)"""
-    updated_count = 0
-    not_found = []
-    
-    for u in updates:
-        if u.sku in _sim_stock:
-            # Overwrite the simulation with TRUE live data from external system
-            _sim_stock[u.sku] = max(0.0, float(u.stock))
-            updated_count += 1
-        else:
-            not_found.append(u.sku)
-            
+def inv_sync(
+    updates: List[StockUpdate],
+    user: dict | None = Depends(get_optional_user),
+):
+    """
+    Receive live stock from POS / ERP / Shopify / WooCommerce webhook.
+    Demand is predicted separately from uploaded sales CSV.
+    """
+    payload = [u.model_dump(exclude_none=True) for u in updates]
+    result = inv_store.sync_batch(payload)
+    _require_sales()
+    evaluation = evaluate(str(LIVE_CSV))
+    alert_result = None
+    try:
+        from src.alerts.service import auto_send_for_user
+        alert_result = auto_send_for_user(user)
+    except Exception:
+        pass
     return {
         "status": "success",
-        "message": f"Successfully synced {updated_count} SKUs.",
-        "skipped_unknown_skus": not_found,
-        "new_levels": {u.sku: _sim_stock.get(u.sku) for u in updates if u.sku in _sim_stock}
+        "message": f"Updated stock for {len(result['updated']) + len(result['created'])} product(s).",
+        "updated": result["updated"],
+        "created": result["created"],
+        "alerts": evaluation["alerts"],
+        "alert_count": len(evaluation["alerts"]),
+        "alert_email": alert_result,
     }
 
+
+@app.post("/api/inventory/evaluate", tags=["Inventory"])
+def inv_evaluate(user: dict = Depends(get_current_user)):
+    """Re-run demand forecast from sales CSV and compare against API inventory."""
+    _require_sales()
+    return evaluate(str(LIVE_CSV))
+
+
+@app.get("/api/inventory/live", tags=["Inventory"])
+def inv_live():
+    _require_sales()
+    items = build_items(str(LIVE_CSV))
+    return {"items": items, "updated_at": _utc_now().isoformat().replace("+00:00", "Z")}
+
+
+@app.get("/api/inventory/kpis", tags=["Inventory"])
+def inv_kpis():
+    _require_sales()
+    items = build_items(str(LIVE_CSV))
+    return build_kpis(items)
+
+
+@app.get("/api/inventory/alerts", tags=["Inventory"])
+def inv_alerts():
+    _require_sales()
+    items = build_items(str(LIVE_CSV))
+    alerts = build_alerts(items)
+    return {
+        "alerts": alerts,
+        "count": len(alerts),
+        "updated_at": _utc_now().isoformat().replace("+00:00", "Z"),
+    }
+
+
+@app.get("/api/inventory/forecast", tags=["Inventory"])
+def inv_forecast(sku: str = None):
+    _require_sales()
+    path = str(LIVE_CSV)
+    if sku:
+        detail = build_forecast_detail(path, sku)
+        if not detail:
+            raise HTTPException(status_code=404, detail=f"SKU {sku} not found in sales data.")
+        return {"forecasts": [detail], "updated_at": _utc_now().isoformat().replace("+00:00", "Z")}
+
+    items = build_items(path)
+    forecasts = []
+    for item in items[:20]:
+        detail = build_forecast_detail(path, item["sku"])
+        if detail:
+            forecasts.append(detail)
+    return {"forecasts": forecasts, "updated_at": _utc_now().isoformat().replace("+00:00", "Z")}
+
+
+@app.get("/api/inventory/abc", tags=["Inventory"])
+def inv_abc():
+    _require_sales()
+    items = build_items(str(LIVE_CSV))
+    ranked = sorted(
+        [{
+            "sku": i["sku"],
+            "name": i["name"],
+            "category": i["category"],
+            "abc_class": i["abc_class"],
+            "annual_value": round(i["daily_demand"] * 365 * i["cost"], 2),
+            "daily_demand": i["daily_demand"],
+            "cost": i["cost"],
+        } for i in items],
+        key=lambda x: -x["annual_value"],
+    )
+    total = sum(i["annual_value"] for i in ranked) or 1
+    cum = 0
+    for i in ranked:
+        cum += i["annual_value"]
+        i["cumulative_pct"] = round(cum / total * 100, 1)
+    return {"items": ranked, "total_annual_value": round(total, 2)}
+
+
+@app.post("/api/inventory/restock/{sku}", tags=["Inventory"])
+def inv_restock(sku: str, qty: float = 0, user: dict = Depends(get_current_user)):
+    _require_sales()
+    items = build_items(str(LIVE_CSV))
+    item = next((i for i in items if i["sku"] == sku), None)
+    if not item:
+        raise HTTPException(status_code=404, detail=f"SKU {sku} not found in sales catalog.")
+
+    qty = qty if qty > 0 else item["eoq"]
+    rec = inv_store.get(sku)
+    new_stock = float(rec.get("stock", 0)) + qty
+    inv_store.upsert(
+        sku, new_stock,
+        name=item["name"],
+        category=item["category"],
+        unit_cost=item["cost"],
+        reorder_pt=item["reorder_pt"],
+        lead_time=item["lead_time"],
+        max_stock=item["max_stock"],
+    )
+    return {"sku": sku, "name": item["name"], "qty_added": round(qty), "new_stock": round(new_stock)}
+
+
 class _WSMgr:
-    def __init__(self): self.active = []
-    async def connect(self, ws): await ws.accept(); self.active.append(ws)
-    def disconnect(self, ws): self.active = [w for w in self.active if w is not ws]
-    async def broadcast(self, data):
-        dead = []
-        for ws in self.active:
-            try: await ws.send_json(data)
-            except: dead.append(ws)
-        for ws in dead: self.disconnect(ws)
+    def __init__(self):
+        self.active = []
+
+    async def connect(self, ws):
+        await ws.accept()
+        self.active.append(ws)
+
+    def disconnect(self, ws):
+        self.active = [w for w in self.active if w is not ws]
+
 
 _wsmgr = _WSMgr()
+
 
 @app.websocket("/ws/inventory")
 async def inv_ws(websocket: WebSocket):
     await _wsmgr.connect(websocket)
     try:
         while True:
-            _tick(); items = [_build(p) for p in _PRODUCTS]
-            await websocket.send_json({"type": "snapshot", "items": items,
-                "alert_count": sum(1 for i in items if i["status"] in ("critical","warning","stockout")),
-                "updated_at": datetime.utcnow().isoformat() + "Z"})
-            await asyncio.sleep(10)
+            if LIVE_CSV.exists():
+                items = build_items(str(LIVE_CSV))
+                alerts = build_alerts(items)
+                await websocket.send_json({
+                    "type": "snapshot",
+                    "items": items,
+                    "alert_count": len(alerts),
+                    "updated_at": _utc_now().isoformat().replace("+00:00", "Z"),
+                })
+            await asyncio.sleep(30)
     except WebSocketDisconnect:
         _wsmgr.disconnect(websocket)
+
+# ------------------------------------------------------------------ #
+#  Static frontend (HTML / CSS / JS) — must be registered last
+# ------------------------------------------------------------------ #
+if WEBSITE_DIR.exists():
+    app.mount("/", StaticFiles(directory=str(WEBSITE_DIR), html=True), name="website")
 
 # ------------------------------------------------------------------ #
 #  Entry-point
 # ------------------------------------------------------------------ #
 if __name__ == "__main__":
-    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
+    import os
+    import socket
+
+    port = int(os.getenv("PORT", "8000"))
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        if probe.connect_ex(("127.0.0.1", port)) == 0:
+            print()
+            print(f"  Port {port} is already in use.")
+            print("  Stop the other Salevora server first, then run python api.py again.")
+            print("  PowerShell:  Get-Process python* | Stop-Process -Force")
+            print()
+            raise SystemExit(1)
+
+    # Bind all interfaces so LAN devices can connect; browser must use localhost.
+    print()
+    print("  Salevora")
+    print("  --------")
+    print(f"  Open in your browser:  http://localhost:{port}")
+    print(f"  API docs:              http://localhost:{port}/docs")
+    print("  (Do not use 0.0.0.0 in the browser — that address will not load.)")
+    print()
+    # reload=False avoids orphan worker processes when the app is started more than once.
+    reload = os.getenv("DEV_RELOAD", "").lower() in ("1", "true", "yes")
+    uvicorn.run("api:app", host="0.0.0.0", port=port, reload=reload)
 

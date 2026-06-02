@@ -1,0 +1,1 @@
+# Database connectivity (MongoDB Atlas)

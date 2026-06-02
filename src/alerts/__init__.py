@@ -1,0 +1,1 @@
+# Brevo email alerts module

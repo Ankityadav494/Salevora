@@ -1,0 +1,47 @@
+{
+  "Product_1": {
+    "stock": 50.0,
+    "reorder_pt": 100.0,
+    "lead_time": 7,
+    "name": "",
+    "category": "Food",
+    "unit_cost": 51.1,
+    "max_stock": 1000.0
+  },
+  "Product_2": {
+    "stock": 200.0,
+    "reorder_pt": 80.0,
+    "lead_time": 5,
+    "name": "",
+    "category": "Clothing",
+    "unit_cost": 56.8,
+    "max_stock": 1000.0
+  },
+  "Product_3": {
+    "stock": 381.0,
+    "reorder_pt": 150.0,
+    "lead_time": 7,
+    "name": "Product_3",
+    "category": "Electronics",
+    "unit_cost": 36.2,
+    "max_stock": 1000.0
+  },
+  "Product_4": {
+    "stock": 500.0,
+    "reorder_pt": 200.0,
+    "lead_time": 10,
+    "name": "",
+    "category": "Books",
+    "unit_cost": 32.4,
+    "max_stock": 1000.0
+  },
+  "Product_5": {
+    "stock": 95.0,
+    "reorder_pt": 40.0,
+    "lead_time": 4,
+    "name": "Product_5",
+    "category": "Toys",
+    "unit_cost": 86.0,
+    "max_stock": 1000.0
+  }
+}

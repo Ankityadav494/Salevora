@@ -3,7 +3,7 @@
 # Data Configuration
 data:
   raw_data_path: "data/raw/sales_data.csv"
-  processed_data_path: "data/processed/processed_sales_data.csv"
+  processed_data_path: "data/processed/live_sales.csv"
   test_size: 0.2
   validation_size: 0.1
   random_state: 42
@@ -19,15 +19,15 @@ features:
 models:
   arima:
     enabled: true
-    order: [2, 1, 2]  # (p, d, q)
-    seasonal_order: [1, 1, 1, 12]  # (P, D, Q, s)
+    order: [1, 1, 1]  # simpler order — less overfit on noisy retail data
   
   prophet:
     enabled: true
     yearly_seasonality: true
-    weekly_seasonality: true
+    weekly_seasonality: false
     daily_seasonality: false
     seasonality_mode: "multiplicative"
+    changepoint_prior_scale: 0.05
   
   lstm:
     enabled: true
