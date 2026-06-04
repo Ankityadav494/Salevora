@@ -215,7 +215,8 @@ function resizeCharts() {
 function initMobileNav() {
   const sidebar = document.querySelector('.sidebar');
   const header = document.querySelector('.dash-header');
-  if (!sidebar || !header) return;
+  if (!sidebar || !header || sidebar.dataset.mobileNavReady) return;
+  sidebar.dataset.mobileNavReady = '1';
 
   let backdrop = document.querySelector('.sidebar-backdrop');
   if (!backdrop) {
@@ -294,6 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 window.refreshReveals = refreshReveals;
 window.resizeCharts = resizeCharts;
+window.initMobileNav = initMobileNav;
 window.animateStatRings = animateStatRings;
 window.initAppShellAnimation = initAppShellAnimation;
 window.initReveal = initReveal;

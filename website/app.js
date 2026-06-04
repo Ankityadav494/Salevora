@@ -251,6 +251,7 @@ function enterApp(user) {
   if (typeof decorateIcons === 'function') decorateIcons();
   if (typeof decorateSidebar === 'function') decorateSidebar();
   if (typeof initAppShellAnimation === 'function') initAppShellAnimation(document.getElementById('appScreen'));
+  if (typeof initMobileNav === 'function') initMobileNav();
   setSidebarUser(user);
   if (typeof refreshReveals === 'function') refreshReveals();
   if (typeof initReveal === 'function') initReveal();
