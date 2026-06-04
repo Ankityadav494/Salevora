@@ -806,6 +806,7 @@ function runPrediction() {
   updateForecast();
   buildTable();
   if (typeof refreshReveals === 'function') refreshReveals();
+  if (typeof resizeCharts === 'function') requestAnimationFrame(() => resizeCharts());
   if (typeof animateStatRings === 'function') animateStatRings();
 
   document.getElementById('kpiSection').scrollIntoView({ behavior:'smooth', block:'start' });

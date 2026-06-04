@@ -205,6 +205,81 @@ function decorateNavTabs() {
   });
 }
 
+function resizeCharts() {
+  if (typeof Plotly === 'undefined' || !Plotly.Plots?.resize) return;
+  document.querySelectorAll('.chart-area, .chart-area-sm').forEach(el => {
+    if (el.id && el.querySelector('.plotly')) Plotly.Plots.resize(el);
+  });
+}
+
+function initMobileNav() {
+  const sidebar = document.querySelector('.sidebar');
+  const header = document.querySelector('.dash-header');
+  if (!sidebar || !header) return;
+
+  let backdrop = document.querySelector('.sidebar-backdrop');
+  if (!backdrop) {
+    backdrop = document.createElement('div');
+    backdrop.className = 'sidebar-backdrop';
+    backdrop.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(backdrop);
+  }
+
+  let toggle = header.querySelector('.sidebar-toggle');
+  if (!toggle) {
+    toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'sidebar-toggle dash-icon-btn';
+    toggle.setAttribute('aria-label', 'Open menu');
+    toggle.setAttribute('aria-expanded', 'false');
+    header.insertBefore(toggle, header.firstChild);
+  }
+
+  function setToggleIcon(open) {
+    if (typeof svIcon !== 'function') {
+      toggle.textContent = open ? '×' : '☰';
+      return;
+    }
+    toggle.innerHTML = svIcon(open ? 'x' : 'menu', 20);
+  }
+
+  function closeNav() {
+    sidebar.classList.remove('is-open');
+    backdrop.classList.remove('is-visible');
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-label', 'Open menu');
+    document.body.classList.remove('nav-open');
+    setToggleIcon(false);
+    resizeCharts();
+  }
+
+  function openNav() {
+    sidebar.classList.add('is-open');
+    backdrop.classList.add('is-visible');
+    toggle.setAttribute('aria-expanded', 'true');
+    toggle.setAttribute('aria-label', 'Close menu');
+    document.body.classList.add('nav-open');
+    setToggleIcon(true);
+  }
+
+  setToggleIcon(false);
+  toggle.addEventListener('click', () => {
+    if (sidebar.classList.contains('is-open')) closeNav();
+    else openNav();
+  });
+  backdrop.addEventListener('click', closeNav);
+  sidebar.querySelectorAll('.sidebar-link').forEach(link => {
+    link.addEventListener('click', () => {
+      if (window.matchMedia('(max-width: 768px)').matches) closeNav();
+    });
+  });
+
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 768) closeNav();
+    resizeCharts();
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   injectIllustrations();
   decorateIcons();
@@ -212,11 +287,13 @@ document.addEventListener('DOMContentLoaded', () => {
   decorateNavTabs();
   initAuthPage();
   initAppShellAnimation();
+  initMobileNav();
   initReveal();
   initUploadZone();
 });
 
 window.refreshReveals = refreshReveals;
+window.resizeCharts = resizeCharts;
 window.animateStatRings = animateStatRings;
 window.initAppShellAnimation = initAppShellAnimation;
 window.initReveal = initReveal;
