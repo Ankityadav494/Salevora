@@ -212,6 +212,17 @@ function resizeCharts() {
   });
 }
 
+function mobileNavQuery() {
+  return window.matchMedia('(max-width: 1024px)');
+}
+
+function mobilePageTitle() {
+  if (document.body.classList.contains('page-alerts')) return 'Email alerts';
+  if (document.body.classList.contains('page-stock')) return 'Stock levels';
+  if (document.body.classList.contains('page-dashboard')) return 'Dashboard';
+  return 'Salevora';
+}
+
 function initMobileNav() {
   const sidebar = document.querySelector('.sidebar');
   const header = document.querySelector('.dash-header');
@@ -236,12 +247,40 @@ function initMobileNav() {
     header.insertBefore(toggle, header.firstChild);
   }
 
+  let brand = header.querySelector('.mobile-header-brand');
+  if (!brand) {
+    brand = document.createElement('div');
+    brand.className = 'mobile-header-brand';
+    brand.innerHTML = `
+      <img src="assets/logo.png?v=12" alt="" width="28" height="28" />
+      <span class="mobile-header-brand-text">${mobilePageTitle()}</span>
+    `;
+    toggle.insertAdjacentElement('afterend', brand);
+  }
+
+  const searchWrap = header.querySelector('.dash-search-wrap');
+  if (searchWrap) {
+    const input = searchWrap.querySelector('input');
+    if (input?.disabled) searchWrap.classList.add('is-hidden-mobile');
+  }
+
+  let closeBtn = sidebar.querySelector('.sidebar-close');
+  if (!closeBtn) {
+    closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'sidebar-close';
+    closeBtn.setAttribute('aria-label', 'Close menu');
+    sidebar.insertBefore(closeBtn, sidebar.firstChild);
+  }
+
   function setToggleIcon(open) {
     if (typeof svIcon !== 'function') {
       toggle.textContent = open ? '×' : '☰';
+      closeBtn.textContent = '×';
       return;
     }
     toggle.innerHTML = svIcon(open ? 'x' : 'menu', 20);
+    closeBtn.innerHTML = svIcon('x', 18);
   }
 
   function closeNav() {
@@ -264,19 +303,22 @@ function initMobileNav() {
   }
 
   setToggleIcon(false);
+  closeNav();
+
   toggle.addEventListener('click', () => {
     if (sidebar.classList.contains('is-open')) closeNav();
     else openNav();
   });
+  closeBtn.addEventListener('click', closeNav);
   backdrop.addEventListener('click', closeNav);
   sidebar.querySelectorAll('.sidebar-link').forEach(link => {
     link.addEventListener('click', () => {
-      if (window.matchMedia('(max-width: 768px)').matches) closeNav();
+      if (mobileNavQuery().matches) closeNav();
     });
   });
 
   window.addEventListener('resize', () => {
-    if (window.innerWidth > 768) closeNav();
+    if (!mobileNavQuery().matches) closeNav();
     resizeCharts();
   });
 }
