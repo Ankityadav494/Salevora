@@ -1874,18 +1874,21 @@ tbody td { padding: 0.55rem 0.9rem; color: var(--text-2); white-space: nowrap; }
 .page-app .app-shell:not(.is-ready) .dash-header {
   opacity: 0;
 }
-.page-app .app-shell.is-ready .sidebar {
-  animation: sidebarSlideIn 0.55s var(--ease) both;
-}
-.page-app .app-shell.is-ready .app-main {
-  animation: mainFadeIn 0.6s var(--ease) 0.08s both;
-}
-.page-app .app-shell.is-ready .dash-header {
-  animation: headerSlideDown 0.5s var(--ease) 0.12s both;
-}
-.page-app .app-shell.is-ready .sidebar-link {
-  animation: navItemIn 0.45s var(--ease) both;
-  animation-delay: calc(var(--nav-i, 0) * 0.06s + 0.22s);
+
+@media (min-width: 1025px) {
+  .page-app .app-shell.is-ready .sidebar {
+    animation: sidebarSlideIn 0.55s var(--ease) both;
+  }
+  .page-app .app-shell.is-ready .app-main {
+    animation: mainFadeIn 0.6s var(--ease) 0.08s both;
+  }
+  .page-app .app-shell.is-ready .dash-header {
+    animation: headerSlideDown 0.5s var(--ease) 0.12s both;
+  }
+  .page-app .app-shell.is-ready .sidebar-link {
+    animation: navItemIn 0.45s var(--ease) both;
+    animation-delay: calc(var(--nav-i, 0) * 0.06s + 0.22s);
+  }
 }
 .sidebar-avatar.avatar-pop {
   animation: avatarPop 0.55s var(--ease);
@@ -2325,7 +2328,7 @@ body.nav-open { overflow: hidden; }
   .app-main::before { left: 0; }
 
   .sidebar {
-    position: fixed;
+    position: fixed !important;
     top: 0;
     left: 0;
     bottom: 0;
@@ -2336,14 +2339,25 @@ body.nav-open { overflow: hidden; }
     flex-direction: column;
     flex-wrap: nowrap;
     padding: 1.35rem 1rem 1rem;
-    transform: translate3d(-105%, 0, 0);
+    transform: translate3d(-105%, 0, 0) !important;
     transition: transform 0.28s var(--ease);
     box-shadow: 8px 0 32px rgba(0, 0, 0, 0.2);
     pointer-events: none;
+    animation: none !important;
+    opacity: 1 !important;
   }
   .sidebar.is-open {
-    transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0) !important;
     pointer-events: auto;
+  }
+  .page-app .app-shell:not(.is-ready) .sidebar,
+  .page-app .app-shell:not(.is-ready) .app-main,
+  .page-app .app-shell:not(.is-ready) .dash-header {
+    opacity: 1;
+  }
+  .page-app .app-shell.is-ready .sidebar,
+  .page-app .app-shell.is-ready .sidebar-link {
+    animation: none !important;
   }
   .sidebar-backdrop { display: block; }
   .sidebar-close { display: inline-flex; }

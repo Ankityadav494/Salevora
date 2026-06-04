@@ -223,64 +223,38 @@ function mobilePageTitle() {
   return 'Salevora';
 }
 
+function syncMobileLayout() {
+  const mobile = mobileNavQuery().matches;
+  document.body.classList.toggle('mobile-layout', mobile);
+  return mobile;
+}
+
 function initMobileNav() {
   const sidebar = document.querySelector('.sidebar');
   const header = document.querySelector('.dash-header');
-  if (!sidebar || !header || sidebar.dataset.mobileNavReady) return;
-  sidebar.dataset.mobileNavReady = '1';
+  if (!sidebar || !header) return;
 
-  let backdrop = document.querySelector('.sidebar-backdrop');
-  if (!backdrop) {
-    backdrop = document.createElement('div');
-    backdrop.className = 'sidebar-backdrop';
-    backdrop.setAttribute('aria-hidden', 'true');
-    document.body.appendChild(backdrop);
+  if (!sidebar.dataset.mobileNavReady) {
+    sidebar.dataset.mobileNavReady = '1';
+    bindMobileNav(sidebar, header);
   }
 
-  let toggle = header.querySelector('.sidebar-toggle');
-  if (!toggle) {
-    toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.className = 'sidebar-toggle dash-icon-btn';
-    toggle.setAttribute('aria-label', 'Open menu');
-    toggle.setAttribute('aria-expanded', 'false');
-    header.insertBefore(toggle, header.firstChild);
-  }
+  syncMobileLayout();
+  closeMobileNav();
+}
 
-  let brand = header.querySelector('.mobile-header-brand');
-  if (!brand) {
-    brand = document.createElement('div');
-    brand.className = 'mobile-header-brand';
-    brand.innerHTML = `
-      <img src="assets/logo.png?v=12" alt="" width="28" height="28" />
-      <span class="mobile-header-brand-text">${mobilePageTitle()}</span>
-    `;
-    toggle.insertAdjacentElement('afterend', brand);
-  }
-
-  const searchWrap = header.querySelector('.dash-search-wrap');
-  if (searchWrap) {
-    const input = searchWrap.querySelector('input');
-    if (input?.disabled) searchWrap.classList.add('is-hidden-mobile');
-  }
-
-  let closeBtn = sidebar.querySelector('.sidebar-close');
-  if (!closeBtn) {
-    closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'sidebar-close';
-    closeBtn.setAttribute('aria-label', 'Close menu');
-    sidebar.insertBefore(closeBtn, sidebar.firstChild);
-  }
+function bindMobileNav(sidebar, header) {
+  const backdrop = document.querySelector('.sidebar-backdrop');
+  const toggle = header.querySelector('.sidebar-toggle');
+  const closeBtn = sidebar.querySelector('.sidebar-close');
+  if (!backdrop || !toggle || !closeBtn) return;
 
   function setToggleIcon(open) {
     if (typeof svIcon !== 'function') {
       toggle.textContent = open ? '×' : '☰';
-      closeBtn.textContent = '×';
       return;
     }
     toggle.innerHTML = svIcon(open ? 'x' : 'menu', 20);
-    closeBtn.innerHTML = svIcon('x', 18);
   }
 
   function closeNav() {
@@ -294,6 +268,7 @@ function initMobileNav() {
   }
 
   function openNav() {
+    if (!syncMobileLayout()) return;
     sidebar.classList.add('is-open');
     backdrop.classList.add('is-visible');
     toggle.setAttribute('aria-expanded', 'true');
@@ -302,9 +277,10 @@ function initMobileNav() {
     setToggleIcon(true);
   }
 
-  setToggleIcon(false);
-  closeNav();
+  window.closeMobileNav = closeNav;
+  window.openMobileNav = openNav;
 
+  setToggleIcon(false);
   toggle.addEventListener('click', () => {
     if (sidebar.classList.contains('is-open')) closeNav();
     else openNav();
@@ -318,9 +294,19 @@ function initMobileNav() {
   });
 
   window.addEventListener('resize', () => {
+    syncMobileLayout();
     if (!mobileNavQuery().matches) closeNav();
     resizeCharts();
   });
+}
+
+function closeMobileNav() {
+  if (typeof window.closeMobileNav === 'function') window.closeMobileNav();
+  else {
+    document.querySelector('.sidebar')?.classList.remove('is-open');
+    document.querySelector('.sidebar-backdrop')?.classList.remove('is-visible');
+    document.body.classList.remove('nav-open');
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -333,11 +319,14 @@ document.addEventListener('DOMContentLoaded', () => {
   initMobileNav();
   initReveal();
   initUploadZone();
+  syncMobileLayout();
 });
 
 window.refreshReveals = refreshReveals;
 window.resizeCharts = resizeCharts;
 window.initMobileNav = initMobileNav;
+window.closeMobileNav = closeMobileNav;
+window.syncMobileLayout = syncMobileLayout;
 window.animateStatRings = animateStatRings;
 window.initAppShellAnimation = initAppShellAnimation;
 window.initReveal = initReveal;

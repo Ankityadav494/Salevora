@@ -15,7 +15,7 @@
   <link rel="icon" type="image/png" href="assets/favicon.png?v=12" />
   <link rel="apple-touch-icon" href="assets/logo.png?v=12" />
   <meta name="theme-color" content="#2F5233" />
-  <link rel="stylesheet" href="style.css?v=15" />
+  <link rel="stylesheet" href="style.css?v=16" />
 </head>
 <body class="page-auth">
 
@@ -190,6 +190,7 @@
 <div id="appScreen" class="app-shell" style="display:none">
 
   <aside class="sidebar">
+    <button type="button" class="sidebar-close" aria-label="Close menu" data-icon="x"></button>
     <div class="sidebar-brand">
       <img class="brand-logo" src="assets/logo.png?v=12" alt="" width="36" height="36" />
       <span class="sidebar-brand-text">Salevora</span>
@@ -216,6 +217,11 @@
 
   <div class="app-main">
     <header class="dash-header">
+      <button type="button" class="sidebar-toggle dash-icon-btn" aria-label="Open menu" aria-expanded="false" data-icon="menu"></button>
+      <div class="mobile-header-brand">
+        <img src="assets/logo.png?v=12" alt="" width="28" height="28" />
+        <span class="mobile-header-brand-text">Dashboard</span>
+      </div>
       <div class="dash-search-wrap">
         <span class="dash-search-icon" data-icon="search"></span>
         <input type="search" class="dash-search" id="dashSearch" placeholder="Search records…" oninput="onDashSearch(this.value)" />
@@ -423,13 +429,15 @@
 
 </div><!-- /appScreen -->
 
+<div class="sidebar-backdrop" aria-hidden="true"></div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 <script src="copy.js?v=12"></script>
 <script src="icons.js?v=12"></script>
-<script src="ui.js?v=13"></script>
+<script src="ui.js?v=16"></script>
 <script src="auth.js?v=5"></script>
 <script src="api-client.js?v=12"></script>
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

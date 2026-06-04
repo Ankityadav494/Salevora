@@ -12,12 +12,13 @@
   <link rel="icon" type="image/png" href="assets/favicon.png?v=12" />
   <link rel="apple-touch-icon" href="assets/logo.png?v=12" />
   <meta name="theme-color" content="#2F5233" />
-  <link rel="stylesheet" href="style.css?v=15" />
+  <link rel="stylesheet" href="style.css?v=16" />
 </head>
 <body class="page-app page-alerts page-dashboard">
 
 <div class="app-shell">
   <aside class="sidebar">
+    <button type="button" class="sidebar-close" aria-label="Close menu" data-icon="x"></button>
     <div class="sidebar-brand">
       <img class="brand-logo" src="assets/logo.png?v=12" alt="" width="36" height="36" />
       <span class="sidebar-brand-text">Salevora</span>
@@ -44,7 +45,12 @@
 
   <div class="app-main">
     <header class="dash-header">
-      <div class="dash-search-wrap">
+      <button type="button" class="sidebar-toggle dash-icon-btn" aria-label="Open menu" aria-expanded="false" data-icon="menu"></button>
+      <div class="mobile-header-brand">
+        <img src="assets/logo.png?v=12" alt="" width="28" height="28" />
+        <span class="mobile-header-brand-text">Email alerts</span>
+      </div>
+      <div class="dash-search-wrap is-hidden-mobile">
         <span class="dash-search-icon" data-icon="search"></span>
         <input type="search" class="dash-search" placeholder="Search settings…" disabled />
       </div>
@@ -130,11 +136,12 @@
   </div><!-- /.app-main -->
 </div><!-- /.app-shell -->
 
+<div class="sidebar-backdrop" aria-hidden="true"></div>
 <div id="toastContainer"></div>
 
 <script src="copy.js?v=12"></script>
 <script src="icons.js?v=12"></script>
-<script src="ui.js?v=13"></script>
+<script src="ui.js?v=16"></script>
 <script src="auth.js?v=12"></script>
 <script src="api-client.js?v=12"></script>
 <script src="alerts.js?v=12"></script>
